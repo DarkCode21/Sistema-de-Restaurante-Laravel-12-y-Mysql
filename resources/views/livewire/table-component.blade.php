@@ -143,6 +143,9 @@
                                 de Mesa</label>
                             <input wire:model="name" type="text" placeholder="ID-001"
                                 class="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 rounded-xl px-4 py-3 text-sm font-bold outline-none transition-all">
+                            @error('name')
+                                <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
+                            @enderror
                         </div>
 
                         <div class="grid grid-cols-2 gap-4">
@@ -151,6 +154,9 @@
                                     class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Capacidad</label>
                                 <input wire:model="capacity" type="number"
                                     class="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 rounded-xl px-4 py-3 text-sm font-bold outline-none">
+                                @error('capacity')
+                                    <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
+                                @enderror
                             </div>
                             <div class="space-y-1">
                                 <label
@@ -161,6 +167,9 @@
                                     <option value="ocupada">Ocupada</option>
                                     <option value="reservada">Reservada</option>
                                 </select>
+                                @error('status')
+                                    <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
+                                @enderror
                             </div>
                         </div>
 

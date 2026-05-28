@@ -46,12 +46,6 @@
         <div class="bg-white border border-slate-200 overflow-hidden shadow-sm">
 
             <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white">
-                <div>
-                    <h4 class="text-slate-800 font-bold text-lg">Listado de Gastos</h4>
-                    <p class="text-slate-400 text-[10px] uppercase tracking-widest mt-1 font-semibold">
-                        Flujo de Efectivo y Egresos
-                    </p>
-                </div>
 
                 @can('gastos.reportes')
                     <div

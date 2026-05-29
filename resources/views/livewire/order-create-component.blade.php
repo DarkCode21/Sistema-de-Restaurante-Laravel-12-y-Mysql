@@ -368,21 +368,32 @@
             <div class="overflow-y-auto p-4 bg-gray-100 flex-1">
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-                    <div class="bg-white rounded-xl shadow overflow-hidden flex flex-col">
-                        <div class="px-4 py-2 border-b font-semibold text-gray-700 bg-gray-50">
-                            Cocina
+                    @if ($separate_orders)
+                        <div class="bg-white rounded-xl shadow overflow-hidden flex flex-col">
+                            <div class="px-4 py-2 border-b font-semibold text-gray-700 bg-gray-50">
+                                Cocina
+                            </div>
+                            <iframe id="printFrameKitchen" src=""
+                                class="w-full h-[40vh] lg:h-[60vh] border-0">
+                            </iframe>
                         </div>
-                        <iframe id="printFrameKitchen" src="" class="w-full h-[40vh] lg:h-[60vh] border-0">
-                        </iframe>
-                    </div>
 
-                    <div class="bg-white rounded-xl shadow overflow-hidden flex flex-col">
-                        <div class="px-4 py-2 border-b font-semibold text-gray-700 bg-gray-50">
-                            Bar
+                        <div class="bg-white rounded-xl shadow overflow-hidden flex flex-col">
+                            <div class="px-4 py-2 border-b font-semibold text-gray-700 bg-gray-50">
+                                Bar
+                            </div>
+                            <iframe id="printFrameBar" src="" class="w-full h-[40vh] lg:h-[60vh] border-0">
+                            </iframe>
                         </div>
-                        <iframe id="printFrameBar" src="" class="w-full h-[40vh] lg:h-[60vh] border-0">
-                        </iframe>
-                    </div>
+                    @else
+                        <div class="bg-white rounded-xl shadow overflow-hidden flex flex-col lg:col-span-2">
+                            <div class="px-4 py-2 border-b font-semibold text-gray-700 bg-gray-50">
+                                Todo
+                            </div>
+                            <iframe id="printFrame" src="" class="w-full h-[40vh] lg:h-[60vh] border-0">
+                            </iframe>
+                        </div>
+                    @endif
 
                 </div>
             </div>
@@ -399,6 +410,8 @@
 
 </div>
 
+
+
 <script>
     document.addEventListener('livewire:init', () => {
 
@@ -409,19 +422,30 @@
 
             for (const printerData of printers[0]) {
 
-                const finalUrl =
-                    printerData.url +
-                    '?requires_kitchen=' +
-                    printerData.requires_kitchen;
+                let finalUrl = printerData.url;
+
+                // SOLO SI SEPARA PEDIDOS
+                @if ($separate_orders)
+
+                    finalUrl +=
+                        '?requires_kitchen=' +
+                        printerData.requires_kitchen;
+                @endif
 
                 // SIN impresión directa
-                @if (!$empresa->direct_printing)
+                @if (!$direct_printing)
 
-                    if (printerData.requires_kitchen) {
+                    @if ($separate_orders)
+
+                        if (printerData.requires_kitchen) {
+                            kitchenUrl = finalUrl;
+                        } else {
+                            barUrl = finalUrl;
+                        }
+                    @else
+
                         kitchenUrl = finalUrl;
-                    } else {
-                        barUrl = finalUrl;
-                    }
+                    @endif
                 @else
 
                     await printKitchenTicket(
@@ -434,7 +458,7 @@
             }
 
             // ABRIR SOLO UNA VEZ
-            @if (!$empresa->direct_printing)
+            @if (!$direct_printing)
                 abrirModalImpresion(kitchenUrl, barUrl);
             @endif
 

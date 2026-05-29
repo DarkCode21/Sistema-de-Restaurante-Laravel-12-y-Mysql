@@ -18,6 +18,7 @@ class Setting extends Model
         'favicon_path',
         'timezone',
         'direct_printing',
+        'separate_orders',
         'printer_name',
         'kitchen_printer_name',
         'social_networks',
@@ -26,6 +27,7 @@ class Setting extends Model
     protected $casts = [
         'social_networks' => 'array',
         'direct_printing' => 'boolean',
+        'separate_orders' => 'boolean',
     ];
 
     /**

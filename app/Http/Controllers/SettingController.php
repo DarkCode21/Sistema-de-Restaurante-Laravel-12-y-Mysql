@@ -30,9 +30,14 @@ class SettingController extends Controller
             'favicon_path' => 'nullable|image|mimes:png,ico|max:512',
             'social_networks' => 'nullable|array',
 
+            // IMPRESIÓN
             'direct_printing' => 'boolean',
+            'separate_orders' => 'boolean',
+
             'printer_name' => 'required_if:direct_printing,1|nullable|string|max:255',
-            'kitchen_printer_name' => 'required_if:direct_printing,1|nullable|string|max:255',
+
+            'kitchen_printer_name' => 'nullable|string|max:255',
+
         ], [
             'company_name.required' => 'El nombre comercial de la empresa es obligatorio.',
             'company_email.required' => 'El correo electrónico de soporte es requerido.',
@@ -41,37 +46,68 @@ class SettingController extends Controller
             'company_address.required' => 'La dirección principal es requerida.',
             'currency_simbol.required' => 'El símbolo de la moneda es obligatorio.',
             'timezone.required' => 'Debes seleccionar una zona horaria.',
-        
+
             'logo_path.image' => 'El logo debe ser una imagen válida.',
             'logo_path.mimes' => 'El logo solo acepta formatos: jpeg, png, jpg o svg.',
             'logo_path.max' => 'El logo no debe pesar más de 2 MB (2048 KB).',
-            
+
             'favicon_path.image' => 'El favicon debe ser una imagen.',
             'favicon_path.mimes' => 'El favicon solo acepta formatos: png o ico.',
             'favicon_path.max' => 'El favicon no debe pesar más de 512 KB.',
-        
-            'printer_name.required_if' => 'El nombre de la impresora es obligatorio si la impresión directa está activa.',
+
+            'printer_name.required_if' => 'El nombre de la impresora principal es obligatorio si la impresión directa está activa.',
             'printer_name.max' => 'El nombre de la impresora no debe superar los 255 caracteres.',
-            'kitchen_printer_name.required_if' => 'El nombre de la impresora de cocina es obligatorio si la impresión directa está activa.',
+
             'kitchen_printer_name.max' => 'El nombre de la impresora de cocina no debe superar los 255 caracteres.',
         ]);
 
         $validated['social_networks'] = $request->input('social_networks', []);
+
+        // IMPRESIÓN
         $validated['direct_printing'] = $request->boolean('direct_printing');
-        $validated['printer_name'] = $validated['direct_printing'] ? $request->input('printer_name') : null;
-        $validated['kitchen_printer_name'] = $validated['direct_printing'] ? $request->input('kitchen_printer_name') : null;
+        $validated['separate_orders'] = $request->boolean('separate_orders');
+
+        $validated['printer_name'] = $validated['direct_printing']
+            ? $request->input('printer_name')
+            : null;
+
+        $validated['kitchen_printer_name'] = (
+            $validated['direct_printing'] &&
+            $validated['separate_orders']
+        )
+            ? $request->input('kitchen_printer_name')
+            : null;
+
+        // VALIDAR SEGUNDA IMPRESORA SOLO SI APLICA
+        if (
+            $validated['direct_printing'] &&
+            $validated['separate_orders'] &&
+            empty($validated['kitchen_printer_name'])
+        ) {
+
+            return back()
+                ->withErrors([
+                    'kitchen_printer_name' =>
+                    'El nombre de la impresora de cocina es obligatorio si la impresión directa y separación están activas.'
+                ])
+                ->withInput();
+        }
 
         if ($request->hasFile('logo_path')) {
+
             if ($setting->exists && $setting->logo_path) {
                 Storage::disk('public')->delete($setting->logo_path);
             }
+
             $validated['logo_path'] = $request->file('logo_path')->store('branding', 'public');
         }
 
         if ($request->hasFile('favicon_path')) {
+
             if ($setting->exists && $setting->favicon_path) {
                 Storage::disk('public')->delete($setting->favicon_path);
             }
+
             $validated['favicon_path'] = $request->file('favicon_path')->store('branding', 'public');
         }
 

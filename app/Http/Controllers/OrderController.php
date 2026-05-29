@@ -60,19 +60,28 @@ class OrderController extends Controller
 
     public function print(Request $request, $id)
     {
-        $requiresKitchen = $request->boolean('requires_kitchen');
-
-        $order = Order::with([
+        $query = Order::with([
             'table',
-            'details' => function ($q) use ($requiresKitchen) {
+            'details' => function ($q) use ($request) {
 
-                $q->where('requires_kitchen', $requiresKitchen)
-                    ->whereIn('cooking_status', ['pending', 'in_progress'])
+                if ($request->has('requires_kitchen')) {
+
+                    $requiresKitchen = $request->boolean('requires_kitchen');
+
+                    $q->where('requires_kitchen', $requiresKitchen);
+                }
+
+                $q->whereIn('cooking_status', ['pending', 'in_progress'])
                     ->with('product');
             },
-        ])->where('status', 'abierto')->findOrFail($id);
+        ]);
+
+        $order = $query
+            ->where('status', 'abierto')
+            ->findOrFail($id);
 
         if ($order->details->isEmpty()) {
+
             return response()->json([
                 'message' => 'No hay productos pendientes para este destino.'
             ], 404);

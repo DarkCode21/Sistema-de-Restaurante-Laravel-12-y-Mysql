@@ -40,7 +40,9 @@ class OrderCreateComponent extends Component
     public $searchCustomer = '';
     public $customer_id;
     public $customer_name = 'Consumidor Final';
+    public $direct_printing = false;
     public $printer_name;
+    public $separate_orders = false;
     public $kitchen_printer_name;
 
     public $newCustomer = [
@@ -56,8 +58,10 @@ class OrderCreateComponent extends Component
         $this->table = $table;
 
         $setting = Setting::first();
+        $this->direct_printing = $setting->direct_printing;
         $this->printer_name = $setting->printer_name;
         $this->kitchen_printer_name = $setting->kitchen_printer_name;
+        $this->separate_orders = $setting->separate_orders;
 
         $this->order = Order::with('details.product')
             ->where('table_id', $this->table->id)
@@ -276,18 +280,42 @@ class OrderCreateComponent extends Component
 
     public function getItemsToPrintProperty()
     {
-        if (!$this->order) return collect();
+        if (!$this->order) {
+            return collect();
+        }
 
-        return $this->order->details()
+        $details = $this->order->details()
             ->where('cooking_status', 'pending')
             ->with('product')
-            ->get()
+            ->get();
+
+        if (!$this->separate_orders) {
+            return collect([
+                [
+                    'requires_kitchen' => false,
+                    'printer_name'     => $this->printer_name,
+                    'items'            => $details->map(function ($d) {
+                        return [
+                            'id'       => $d->id,
+                            'name'     => $d->product->name,
+                            'quantity' => $d->quantity,
+                            'notes'    => $d->notes ?? ''
+                        ];
+                    })->toArray()
+                ]
+            ]);
+        }
+
+        return $details
             ->groupBy('requires_kitchen')
             ->map(function ($details, $requiresKitchen) {
-                $printerName = $requiresKitchen ? $this->kitchen_printer_name : $this->printer_name;
+
+                $printerName = $requiresKitchen
+                    ? $this->kitchen_printer_name
+                    : $this->printer_name;
 
                 return [
-                    'requires_kitchen' => (bool)$requiresKitchen,
+                    'requires_kitchen' => (bool) $requiresKitchen,
                     'printer_name'     => $printerName,
                     'items'            => $details->map(function ($d) {
                         return [
@@ -298,7 +326,8 @@ class OrderCreateComponent extends Component
                         ];
                     })->toArray()
                 ];
-            })->values();
+            })
+            ->values();
     }
 
     public function saveOrderTransaction()

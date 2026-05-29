@@ -198,10 +198,28 @@
 
         function abrirModalImpresion(kitchenUrl = '', barUrl = '') {
 
-            document.getElementById('printFrameKitchen').src = kitchenUrl;
-            document.getElementById('printFrameBar').src = barUrl;
-
             const modal = document.getElementById('printModal');
+
+            @if ($empresa->separate_orders)
+
+                const kitchenFrame = document.getElementById('printFrameKitchen');
+                const barFrame = document.getElementById('printFrameBar');
+
+                if (kitchenFrame) {
+                    kitchenFrame.src = kitchenUrl || '';
+                }
+
+                if (barFrame) {
+                    barFrame.src = barUrl || '';
+                }
+            @else
+
+                const printFrame = document.getElementById('printFrame');
+
+                if (printFrame) {
+                    printFrame.src = kitchenUrl || '';
+                }
+            @endif
 
             modal.classList.remove('hidden');
             modal.classList.add('flex');
@@ -211,11 +229,29 @@
 
             const modal = document.getElementById('printModal');
 
-            modal.classList.remove('flex');
-            modal.classList.add('hidden');
+            @if ($empresa->separate_orders)
 
-            document.getElementById('printFrameKitchen').src = '';
-            document.getElementById('printFrameBar').src = '';
+                const kitchenFrame = document.getElementById('printFrameKitchen');
+                const barFrame = document.getElementById('printFrameBar');
+
+                if (kitchenFrame) {
+                    kitchenFrame.src = '';
+                }
+
+                if (barFrame) {
+                    barFrame.src = '';
+                }
+            @else
+
+                const printFrame = document.getElementById('printFrame');
+
+                if (printFrame) {
+                    printFrame.src = '';
+                }
+            @endif
+
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
         }
     </script>
 

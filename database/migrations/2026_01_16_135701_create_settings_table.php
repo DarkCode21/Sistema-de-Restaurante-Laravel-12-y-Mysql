@@ -26,6 +26,7 @@ return new class extends Migration
             $table->json('social_networks')->nullable();
 
             $table->boolean('direct_printing')->default(false);
+            $table->boolean('separate_orders')->default(false);
             $table->string('printer_name')->nullable()->comment('Impresora de Caja / Barra / Bebidas');
             $table->string('kitchen_printer_name')->nullable()->comment('Impresora de Cocina');
 

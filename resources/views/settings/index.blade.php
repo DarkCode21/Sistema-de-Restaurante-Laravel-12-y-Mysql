@@ -247,7 +247,8 @@
                                 </div>
 
                                 <div class="space-y-4 pt-4 border-t border-slate-100" x-data="{
-                                    directPrint: {{ old('direct_printing', $setting->direct_printing) || $errors->has('printer_name') || $errors->has('kitchen_printer_name') ? 'true' : 'false' }}
+                                    directPrint: {{ old('direct_printing', $setting->direct_printing) || $errors->has('printer_name') || $errors->has('kitchen_printer_name') ? 'true' : 'false' }},
+                                    separateOrders: {{ old('separate_orders', $setting->separate_orders ?? 0) ? 'true' : 'false' }}
                                 }">
 
                                     <label
@@ -255,10 +256,15 @@
                                         <i class="fas fa-print"></i> Configuración de Impresión
                                     </label>
 
+                                    <!-- IMPRESION DIRECTA -->
                                     <div
                                         class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+
                                         <div class="flex flex-col">
-                                            <span class="text-xs font-bold text-slate-700">Impresión Directa</span>
+                                            <span class="text-xs font-bold text-slate-700">
+                                                Impresión Directa
+                                            </span>
+
                                             <span class="text-[10px] text-slate-400 font-medium">
                                                 Saltar ventana de vista previa
                                             </span>
@@ -267,15 +273,48 @@
                                         <input type="hidden" name="direct_printing" value="0">
 
                                         <label class="relative inline-flex items-center cursor-pointer select-none">
+
                                             <input type="checkbox" name="direct_printing" value="1"
                                                 x-model="directPrint" class="sr-only peer">
 
                                             <div
                                                 class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600">
                                             </div>
+
                                         </label>
                                     </div>
 
+                                    <!-- SEPARAR PEDIDOS -->
+                                    <div
+                                        class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+
+                                        <div class="flex flex-col">
+
+                                            <span class="text-xs font-bold text-slate-700">
+                                                Separar Pedidos
+                                            </span>
+
+                                            <span class="text-[10px] text-slate-400 font-medium">
+                                                Imprimir cocina/bar por separado
+                                            </span>
+
+                                        </div>
+
+                                        <input type="hidden" name="separate_orders" :value="separateOrders ? 1 : 0">
+
+                                        <label class="relative inline-flex items-center cursor-pointer select-none">
+
+                                            <input type="checkbox" value="1" x-model="separateOrders"
+                                                class="sr-only peer">
+
+                                            <div
+                                                class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600">
+                                            </div>
+
+                                        </label>
+                                    </div>
+
+                                    <!-- IMPRESORA PRINCIPAL -->
                                     <div class="space-y-1 transition-all duration-300" x-show="directPrint"
                                         x-transition x-cloak>
 
@@ -285,6 +324,7 @@
                                         </label>
 
                                         <div class="relative">
+
                                             <div
                                                 class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                                                 <i class="fas fa-receipt text-xs"></i>
@@ -294,6 +334,7 @@
                                                 value="{{ old('printer_name', $setting->printer_name) }}"
                                                 placeholder="Ej: Ticketera_Principal"
                                                 class="w-full pl-10 rounded-xl @error('printer_name') border-red-500 focus:ring-red-500/10 focus:border-red-500 @else border-slate-200 focus:ring-orange-500/10 focus:border-orange-500 @enderror transition-all text-sm font-medium">
+
                                         </div>
 
                                         @error('printer_name')
@@ -303,15 +344,17 @@
                                         @enderror
                                     </div>
 
-                                    <div class="space-y-1 transition-all duration-300" x-show="directPrint"
-                                        x-transition x-cloak>
+                                    <!-- IMPRESORA COCINA / BAR -->
+                                    <div class="space-y-1 transition-all duration-300"
+                                        x-show="directPrint && separateOrders" x-transition x-cloak>
 
                                         <label
                                             class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                                            Impresora Cocina
+                                            Impresora Cocina / Bar
                                         </label>
 
                                         <div class="relative">
+
                                             <div
                                                 class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
                                                 <i class="fas fa-receipt text-xs"></i>
@@ -321,6 +364,7 @@
                                                 value="{{ old('kitchen_printer_name', $setting->kitchen_printer_name) }}"
                                                 placeholder="Ej: Ticketera_Cocina"
                                                 class="w-full pl-10 rounded-xl @error('kitchen_printer_name') border-red-500 focus:ring-red-500/10 focus:border-red-500 @else border-slate-200 focus:ring-orange-500/10 focus:border-orange-500 @enderror transition-all text-sm font-medium">
+
                                         </div>
 
                                         @error('kitchen_printer_name')
@@ -329,6 +373,7 @@
                                             </p>
                                         @enderror
                                     </div>
+
                                 </div>
                             </div>
                         </div>

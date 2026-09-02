@@ -5,6 +5,7 @@ namespace App\Livewire;
 use Livewire\Component;
 use App\Models\Order;
 use App\Models\OrderDetail;
+use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 use Livewire\WithPagination;
 
@@ -15,53 +16,91 @@ class OrdersIndexComponent extends Component
     public $search = '';
     public $status = '';
 
-    public function markDetailAsReady($detailId)
+    public function markDetailAsServed($detailId): void
     {
         $detail = OrderDetail::find($detailId);
 
-        if ($detail) {
-            $detail->update([
-                'cooking_status' => 'served'
-            ]);
-
+        if (!$detail || $detail->cooking_status !== 'ready') {
             $this->dispatch('swal', [
-                'title' => '¡Listo!',
-                'text' => 'El producto ha sido marcado como servido.',
-                'icon' => 'success'
+                'title' => 'Aún no disponible',
+                'text' => 'Solo se pueden retirar platos marcados como listos por Cocina.',
+                'icon' => 'warning',
+                'timer' => 1500,
             ]);
+            return;
         }
+
+        $detail->update([
+            'cooking_status' => 'served'
+        ]);
+
+        $this->dispatch('swal', [
+            'title' => '¡Entregado!',
+            'text' => 'El plato fue retirado y marcado como entregado.',
+            'icon' => 'success',
+            'timer' => 1000,
+        ]);
     }
 
-    public function cancelarDetalle($detailId)
+    public function cancelarDetalle($detailId): void
     {
-        $detail = OrderDetail::with('order', 'product')->find($detailId);
+        $wasCancelled = DB::transaction(function () use ($detailId) {
+            $detail = OrderDetail::query()
+                ->whereKey($detailId)
+                ->lockForUpdate()
+                ->first();
 
-        if (!$detail) return;
+            if (!$detail || in_array($detail->cooking_status, ['cancelled', 'served'], true)) {
+                return false;
+            }
 
-        if ($detail->cooking_status === 'cancelled') return;
+            $order = Order::query()
+                ->whereKey($detail->order_id)
+                ->lockForUpdate()
+                ->first();
 
-        DB::transaction(function () use ($detail) {
+            if (!$order) {
+                return false;
+            }
 
-            // 1. marcar cancelado
             $detail->update([
                 'cooking_status' => 'cancelled'
             ]);
 
-            // 2. devolver stock
-            if ($detail->product) {
-                $detail->product->increment('stock', $detail->quantity);
+            $product = Product::query()
+                ->whereKey($detail->product_id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($product) {
+                $product->increment('stock', $detail->quantity);
             }
 
-            // 3. actualizar total de la orden
-            if ($detail->order) {
-                $nuevoTotal = max(0, $detail->order->total - $detail->subtotal);
+            $remainingDetails = $order->details()
+                ->where('cooking_status', '!=', 'cancelled')
+                ->get();
 
-                $detail->order->update([
-                    'total' => $nuevoTotal,
-                    'amount_pending' => $nuevoTotal
+            if ($remainingDetails->isEmpty()) {
+                $order->update([
+                    'status' => 'cancelado',
+                    'total' => 0,
+                    'amount_pending' => 0,
+                ]);
+                $order->table?->update(['status' => 'libre']);
+            } else {
+                $newTotal = $remainingDetails->sum('subtotal');
+                $order->update([
+                    'total' => $newTotal,
+                    'amount_pending' => $newTotal,
                 ]);
             }
+
+            return true;
         });
+
+        if (!$wasCancelled) {
+            return;
+        }
 
         $this->dispatch('swal', [
             'title' => '¡Cancelado!',

@@ -10,6 +10,7 @@ use App\Models\Sale;
 use App\Models\Setting;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -22,7 +23,7 @@ class OrdersCashierComponent extends Component
     public $detailsToPay = [];
     public $paymentMethods = [];
     public $selectedMethod = null;
-    public $selectedDetails = [];
+    public array $selectedDetails = [];
     public $showPaymentModal = false;
     public $paymentAmount = 0;
     public $payments = [];
@@ -31,6 +32,7 @@ class OrdersCashierComponent extends Component
     public $order;
     public $printer_name;
     public $direct_printing;
+    public bool $quickCheckout = false;
 
     public $subtotal = 0;
     public $tax = 0;
@@ -43,6 +45,17 @@ class OrdersCashierComponent extends Component
         $this->direct_printing = $setting->direct_printing;
         $this->paymentMethods = PaymentMethod::all();
         $this->boxes = CashRegister::where('status', 'open')->get();
+        $this->quickCheckout = request()->boolean('quick_checkout');
+
+        $orderId = request()->integer('order');
+        if (!$this->quickCheckout || !$orderId) {
+            return;
+        }
+
+        $order = Order::with('details')->find($orderId);
+        if ($order?->is_ready_for_checkout) {
+            $this->openFullPayment($order->id);
+        }
     }
 
     public function getPaidProperty()
@@ -101,16 +114,42 @@ class OrdersCashierComponent extends Component
         $this->payments = array_values($this->payments);
     }
 
-    public function openSplitPayment($order_id)
+    public function openSplitPayment($orderId): void
     {
-        $this->order = Order::with(['table', 'details'])->find($order_id);
+        $selectedDetailIds = collect($this->selectedDetails[$orderId] ?? [])
+            ->filter()
+            ->keys()
+            ->filter(fn ($id) => is_numeric($id) && (int) $id > 0)
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
 
-        if (empty($this->selectedDetails)) return;
+        $order = Order::query()
+            ->with('table')
+            ->where('status', 'abierto')
+            ->find($orderId);
 
-        $this->detailsToPay = $this->selectedDetails;
+        if (!$order || $selectedDetailIds === []) {
+            return;
+        }
 
-        $details = OrderDetail::whereIn('id', $this->selectedDetails)->get();
+        $details = $order->details()
+            ->whereIn('id', $selectedDetailIds)
+            ->where('cooking_status', '!=', 'cancelled')
+            ->get();
 
+        if ($details->count() !== count($selectedDetailIds)) {
+            $this->dispatch('swal', [
+                'title' => 'Selección no válida',
+                'text' => 'Solo se pueden cobrar productos de la misma mesa.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
+        $this->order = $order;
+        $this->detailsToPay = $details->pluck('id')->all();
         $this->calculateTotals($details);
 
         $this->resetPaymentFields();
@@ -118,11 +157,30 @@ class OrdersCashierComponent extends Component
 
     public function openFullPayment($order_id)
     {
-        $this->order = Order::with('details')->find($order_id);
+        $order = Order::with('table')
+            ->where('status', 'abierto')
+            ->find($order_id);
 
-        $this->detailsToPay = $this->order->details->pluck('id')->toArray();
+        if (!$order) {
+            return;
+        }
 
-        $this->calculateTotals($this->order->details);
+        $details = $order->details()
+            ->where('cooking_status', '!=', 'cancelled')
+            ->get();
+
+        if ($details->isEmpty()) {
+            $this->dispatch('swal', [
+                'title' => 'Sin productos',
+                'text' => 'La orden no tiene productos pendientes por cobrar.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
+        $this->order = $order;
+        $this->detailsToPay = $details->pluck('id')->all();
+        $this->calculateTotals($details);
 
         $this->resetPaymentFields();
     }
@@ -131,10 +189,12 @@ class OrdersCashierComponent extends Component
     {
         $this->payments = [];
         $this->selectedMethod = null;
+        $this->tip = 0;
+        $this->paymentAmount = $this->subtotal + $this->tax;
         $this->showPaymentModal = true;
     }
 
-    public function processPayment()
+    public function processPayment(): void
     {
         if (!$this->boxId) {
             $this->dispatch('swal', [
@@ -145,135 +205,218 @@ class OrdersCashierComponent extends Component
             return;
         }
 
-        if (empty($this->payments)) {
+        if (!$this->order) {
             $this->dispatch('swal', [
                 'title' => 'Error',
-                'text'  => 'Debe agregar al menos un método de pago',
+                'text'  => 'Debe seleccionar una orden para cobrar',
                 'icon'  => 'error'
             ]);
             return;
         }
 
-        if (empty($this->detailsToPay)) {
+        $paymentRows = collect($this->payments)
+            ->filter(fn ($payment) => is_array($payment)
+                && is_numeric($payment['method_id'] ?? null)
+                && is_numeric($payment['amount'] ?? null)
+                && (float) $payment['amount'] > 0
+                && (!isset($payment['reference']) || (is_string($payment['reference']) && mb_strlen($payment['reference']) <= 255)))
+            ->map(fn ($payment) => [
+                'method_id' => (int) $payment['method_id'],
+                'amount' => (float) $payment['amount'],
+                'reference' => trim($payment['reference'] ?? '') ?: null,
+            ])
+            ->values();
+
+        if ($paymentRows->isEmpty() || $paymentRows->count() !== count($this->payments)) {
             $this->dispatch('swal', [
                 'title' => 'Error',
-                'text'  => 'No hay detalles para pagar',
+                'text'  => 'Cada método de pago debe tener un monto válido.',
                 'icon'  => 'error'
             ]);
             return;
         }
+
+        if ($paymentRows->pluck('method_id')->unique()->count() !== $paymentRows->count()) {
+            $this->dispatch('swal', [
+                'title' => 'Error',
+                'text'  => 'No se puede repetir un método de pago.',
+                'icon'  => 'error'
+            ]);
+            return;
+        }
+
+        $detailIds = collect($this->detailsToPay)
+            ->filter(fn ($id) => is_numeric($id) && (int) $id > 0)
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($detailIds === []) {
+            $this->dispatch('swal', [
+                'title' => 'Error',
+                'text'  => 'No hay productos para cobrar',
+                'icon'  => 'error'
+            ]);
+            return;
+        }
+
+        if (!is_numeric($this->tip) || (float) $this->tip < 0) {
+            $this->dispatch('swal', [
+                'title' => 'Error',
+                'text'  => 'La propina debe ser un monto válido.',
+                'icon'  => 'error'
+            ]);
+            return;
+        }
+
+        $orderId = $this->order->id;
 
         try {
+            $sale = DB::transaction(function () use ($detailIds, $orderId, $paymentRows) {
+                $order = Order::query()
+                    ->with('table')
+                    ->whereKey($orderId)
+                    ->where('status', 'abierto')
+                    ->lockForUpdate()
+                    ->first();
 
-            DB::beginTransaction();
-
-            $details = OrderDetail::whereIn('id', $this->detailsToPay)->get();
-
-            $subtotal = $details->sum('subtotal');
-            $tax = $details->sum('tax');
-            $tip = (float)$this->tip;
-
-            $total = $subtotal + $tax + $tip;
-
-            if ($this->paid < $total) {
-                DB::rollBack();
-                $this->dispatch('swal', [
-                    'title' => 'Error',
-                    'text'  => 'El monto pagado es insuficiente',
-                    'icon'  => 'error'
-                ]);
-                return;
-            }
-
-            $change = $this->paid - $total;
-            $remainingChange = $change;
-
-            $sale = Sale::create([
-                'order_id' => $this->order->id,
-                'cash_register_id' => $this->boxId,
-                'subtotal' => $subtotal,
-                'tax' => $tax,
-                'tip' => $tip,
-                'total' => $total,
-                'paid_amount' => $this->paid,
-                'change' => $change,
-                'paid_at' => now(),
-            ]);
-
-            foreach ($details as $detail) {
-                $sale->details()->create([
-                    'product_id' => $detail->product_id,
-                    'quantity' => $detail->quantity,
-                    'price' => $detail->price,
-                    'subtotal' => $detail->subtotal,
-                    'tax' => $detail->tax,
-                    'notes' => $detail->notes,
-                ]);
-            }
-
-            foreach ($this->payments as $payment) {
-
-                $receivedAmount = (float)$payment['amount'];
-
-                if ($receivedAmount <= 0) continue;
-
-                $methodId = (int)$payment['method_id'];
-
-                $method = collect($this->paymentMethods)
-                    ->first(fn($m) => (int)$m->id === $methodId);
-
-                $returnedAmount = 0;
-                $realAmount = $receivedAmount;
-
-                if ($method && (bool)$method->is_efectivo && $remainingChange > 0) {
-                    $returnedAmount = min($receivedAmount, $remainingChange);
-                    $realAmount = $receivedAmount - $returnedAmount;
-                    $remainingChange -= $returnedAmount;
+                if (!$order) {
+                    throw new \RuntimeException('La orden ya no está disponible.');
                 }
 
-                $sale->payments()->create([
-                    'payment_method_id' => $methodId,
-                    'amount' => $realAmount,
-                    'received_amount' => $receivedAmount,
-                    'returned_amount' => $returnedAmount,
-                    'reference' => $payment['reference'] ?? null,
+                if ($this->quickCheckout && !$order->isReadyForCheckout()) {
+                    throw new \RuntimeException('La orden aún no está lista para cobro rápido.');
+                }
+
+                $cashRegister = CashRegister::query()
+                    ->whereKey($this->boxId)
+                    ->where('status', 'open')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$cashRegister) {
+                    throw new \RuntimeException('La caja ya no está disponible.');
+                }
+
+                $details = OrderDetail::query()
+                    ->where('order_id', $order->id)
+                    ->whereIn('id', $detailIds)
+                    ->where('cooking_status', '!=', 'cancelled')
+                    ->lockForUpdate()
+                    ->get();
+
+                if ($details->count() !== count($detailIds)) {
+                    throw new \RuntimeException('Los productos seleccionados ya no pertenecen a esta orden.');
+                }
+
+                $methodIds = $paymentRows->pluck('method_id')->unique();
+                $methods = PaymentMethod::query()
+                    ->whereIn('id', $methodIds)
+                    ->get()
+                    ->keyBy('id');
+
+                if ($methods->count() !== $methodIds->count()) {
+                    throw new \RuntimeException('Uno de los métodos de pago no está disponible.');
+                }
+
+                $subtotal = (float) $details->sum('subtotal');
+                $tax = (float) $details->sum('tax');
+                $tip = (float) $this->tip;
+                $total = $subtotal + $tax + $tip;
+                $paid = (float) $paymentRows->sum('amount');
+
+                if ($paid < $total) {
+                    throw new \RuntimeException('El monto pagado es insuficiente.');
+                }
+
+                $change = $paid - $total;
+                $remainingChange = $change;
+                $cashAmount = 0;
+
+                $sale = Sale::create([
+                    'order_id' => $order->id,
+                    'cash_register_id' => $cashRegister->id,
+                    'subtotal' => $subtotal,
+                    'tax' => $tax,
+                    'tip' => $tip,
+                    'total' => $total,
+                    'paid_amount' => $paid,
+                    'change' => $change,
+                    'paid_at' => now(),
                 ]);
-            }
 
-            OrderDetail::whereIn('id', $this->detailsToPay)->delete();
+                foreach ($details as $detail) {
+                    $sale->details()->create([
+                        'product_id' => $detail->product_id,
+                        'quantity' => $detail->quantity,
+                        'price' => $detail->price,
+                        'subtotal' => $detail->subtotal,
+                        'tax' => $detail->tax,
+                        'notes' => $detail->notes,
+                    ]);
+                }
 
-            if ($this->order->details()->count() === 0) {
-                $this->order->update([
-                    'status' => 'cerrado',
-                    'amount_pending' => 0
-                ]);
+                foreach ($paymentRows as $payment) {
+                    $method = $methods->get($payment['method_id']);
+                    $returnedAmount = 0;
+                    $realAmount = $payment['amount'];
 
-                $this->order->table->update([
-                    'status' => 'libre'
-                ]);
+                    if ($method->is_efectivo && $remainingChange > 0) {
+                        $returnedAmount = min($payment['amount'], $remainingChange);
+                        $realAmount -= $returnedAmount;
+                        $remainingChange -= $returnedAmount;
+                    }
 
-                $this->order = null;
-            } else {
-                $newDetails = $this->order->details()->get();
+                    if ($method->is_efectivo) {
+                        $cashAmount += $realAmount;
+                    }
 
-                $this->order->update([
-                    'amount_pending' => $newDetails->sum('subtotal') + $newDetails->sum('tax')
-                ]);
+                    $sale->payments()->create([
+                        'payment_method_id' => $method->id,
+                        'amount' => $realAmount,
+                        'received_amount' => $payment['amount'],
+                        'returned_amount' => $returnedAmount,
+                        'reference' => $payment['reference'],
+                    ]);
+                }
 
-                $this->order->load('details.product');
-            }
+                if ($remainingChange > 0) {
+                    throw new \RuntimeException('El vuelto debe descontarse de un pago en efectivo.');
+                }
 
-            CashRegister::find($this->boxId)
-                ->increment('current_amount', $total);
+                OrderDetail::whereKey($details->pluck('id'))->delete();
 
-            DB::commit();
+                $remainingDetails = $order->details()
+                    ->where('cooking_status', '!=', 'cancelled')
+                    ->get();
+
+                if ($remainingDetails->isEmpty()) {
+                    $order->update([
+                        'status' => 'cerrado',
+                        'amount_pending' => 0,
+                    ]);
+                    $order->table?->update(['status' => 'libre']);
+                } else {
+                    $order->update([
+                        'amount_pending' => $remainingDetails->sum('subtotal') + $remainingDetails->sum('tax'),
+                    ]);
+                }
+
+                if ($cashAmount > 0) {
+                    $cashRegister->increment('current_amount', $cashAmount);
+                }
+
+                return $sale;
+            });
 
             $this->showPaymentModal = false;
             $this->selectedDetails = [];
+            $this->order = null;
 
             $message = 'Pago procesado exitosamente.';
-            if ($change > 0) {
-                $message = 'Entregar vuelto: ' . number_format($change, 2);
+            if ($sale->change > 0) {
+                $message = 'Entregar vuelto: ' . number_format($sale->change, 2);
             }
 
             $this->dispatch('swal', [
@@ -285,19 +428,35 @@ class OrdersCashierComponent extends Component
             $url = route('sales.receipt', ['id' => $sale->id]);
 
             if ($this->direct_printing) {
-                $url = route('sales.print-local', ['id' => $sale->id]);
+                $url = URL::temporarySignedRoute(
+                    'sales.print-local',
+                    now()->addMinutes(5),
+                    ['id' => $sale->id],
+                );
             }
 
             $this->dispatch('print-receipt', [
                 'url' => $url,
                 'printer_name' => $this->printer_name
             ]);
-            $this->resetPaymentFields();
-            $this->reset(['boxId', 'tip']);
+            $this->reset([
+                'boxId',
+                'tip',
+                'payments',
+                'selectedMethod',
+                'detailsToPay',
+                'paymentAmount',
+                'subtotal',
+                'tax',
+            ]);
 
-        } catch (\Exception $e) {
-
-            DB::rollBack();
+        } catch (\RuntimeException $e) {
+            $this->dispatch('swal', [
+                'title' => 'Error',
+                'text'  => $e->getMessage(),
+                'icon'  => 'error'
+            ]);
+        } catch (\Throwable $e) {
 
             Log::error('PAYMENT ERROR', [
                 'message' => $e->getMessage(),

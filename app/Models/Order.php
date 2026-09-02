@@ -32,6 +32,32 @@ class Order extends Model
         return $this->hasMany(OrderDetail::class);
     }
 
+    public function isReadyForCheckout(): bool
+    {
+        if ($this->status !== 'abierto') {
+            return false;
+        }
+
+        $details = $this->relationLoaded('details')
+            ? $this->details
+            : $this->details()->get();
+
+        $activeDetails = $details->where('cooking_status', '!=', 'cancelled');
+
+        if ($activeDetails->isEmpty()) {
+            return false;
+        }
+
+        return $activeDetails
+            ->where('requires_kitchen', true)
+            ->every(fn (OrderDetail $detail) => $detail->cooking_status === 'served');
+    }
+
+    public function getIsReadyForCheckoutAttribute(): bool
+    {
+        return $this->isReadyForCheckout();
+    }
+
     public function sale()
     {
         return $this->hasOne(Sale::class);

@@ -13,6 +13,7 @@ use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 use Livewire\WithPagination;
 
 class OrderCreateComponent extends Component
@@ -23,6 +24,7 @@ class OrderCreateComponent extends Component
     public $search = '';
     public $category_id = '';
     public $order;
+    public bool $orderWasReadyForService = false;
 
     public $cart = [];
     public $cartTotal = 0;
@@ -67,9 +69,96 @@ class OrderCreateComponent extends Component
             ->where('table_id', $this->table->id)
             ->where('status', 'abierto')
             ->first();
+        $this->hydrateCartFromOrder();
+        $this->orderWasReadyForService = $this->orderIsReadyForService($this->order);
 
         $this->paymentMethods = PaymentMethod::all();
-        $this->categories = Category::all();
+        $this->categories = Category::whereHas('products', function ($query) {
+            $query->where('status', true);
+        })->orderBy('name')->get();
+    }
+
+    public function refreshReadyOrderAlert(): void
+    {
+        if (!$this->order) {
+            return;
+        }
+
+        $order = Order::with(['details', 'table'])->find($this->order->id);
+
+        if (!$order || $order->status !== 'abierto') {
+            $this->order = null;
+            $this->orderWasReadyForService = false;
+            return;
+        }
+
+        $isReadyForService = $this->orderIsReadyForService($order);
+
+        if ($isReadyForService && !$this->orderWasReadyForService) {
+            $this->dispatch(
+                'order-ready-for-service',
+                orderId: $order->id,
+                tableName: $order->table?->name ?? 'Sin mesa'
+            );
+        }
+
+        $this->syncCartCookingStatuses($order);
+        $this->order = $order;
+        $this->orderWasReadyForService = $isReadyForService;
+    }
+
+    private function orderIsReadyForService(?Order $order): bool
+    {
+        if (!$order) {
+            return false;
+        }
+
+        $kitchenDetails = $order->details
+            ->filter(fn (OrderDetail $detail) => $detail->requires_kitchen && $detail->cooking_status !== 'cancelled');
+
+        return $kitchenDetails->isNotEmpty()
+            && $kitchenDetails->every(fn (OrderDetail $detail) => in_array($detail->cooking_status, ['ready', 'served'], true));
+    }
+
+    private function hydrateCartFromOrder(): void
+    {
+        if (!$this->order) {
+            $this->cart = [];
+            $this->cartTotal = 0;
+            return;
+        }
+
+        $this->order->loadMissing('details.product');
+        $this->cart = $this->order->details
+            ->filter(fn (OrderDetail $detail) => $detail->product && $detail->cooking_status !== 'cancelled')
+            ->mapWithKeys(fn (OrderDetail $detail) => [
+                $detail->product_id => [
+                    'detail_id' => $detail->id,
+                    'product_id' => $detail->product_id,
+                    'name' => $detail->product->name,
+                    'price' => (float) $detail->price,
+                    'quantity' => $detail->quantity,
+                    'subtotal' => (float) $detail->subtotal,
+                    'notes' => $detail->notes,
+                    'requires_kitchen' => (bool) $detail->requires_kitchen,
+                    'cooking_status' => $detail->cooking_status,
+                ],
+            ])
+            ->all();
+        $this->customer_id = $this->order->customer_id;
+        $this->customer_name = $this->order->customer_name ?: 'Consumidor Final';
+        $this->calculateCartTotal();
+    }
+
+    private function syncCartCookingStatuses(Order $order): void
+    {
+        foreach ($order->details as $detail) {
+            $productId = $detail->product_id;
+
+            if (($this->cart[$productId]['detail_id'] ?? null) === $detail->id) {
+                $this->cart[$productId]['cooking_status'] = $detail->cooking_status;
+            }
+        }
     }
 
     public function updatingSearch()
@@ -235,10 +324,8 @@ class OrderCreateComponent extends Component
                 $this->cart[$productId]['quantity']--;
                 $this->cart[$productId]['subtotal'] = $this->cart[$productId]['quantity'] * $this->cart[$productId]['price'];
             } else {
-                if ($this->cart[$productId]['detail_id'] && $this->order) {
-                    OrderDetail::destroy($this->cart[$productId]['detail_id']);
-                }
-                unset($this->cart[$productId]);
+                $this->removeItem($productId);
+                return;
             }
             $this->calculateCartTotal();
             $this->checkEmptyOrder();
@@ -247,10 +334,50 @@ class OrderCreateComponent extends Component
 
     public function removeItem($productId)
     {
-        if (isset($this->cart[$productId])) {
-            if ($this->cart[$productId]['detail_id'] && $this->order) {
-                OrderDetail::destroy($this->cart[$productId]['detail_id']);
+        if (!isset($this->cart[$productId])) {
+            return;
+        }
+
+        $item = $this->cart[$productId];
+
+        try {
+            if ($item['detail_id'] && $this->order) {
+                DB::transaction(function () use ($item) {
+                    $order = Order::query()
+                        ->whereKey($this->order->id)
+                        ->lockForUpdate()
+                        ->first();
+                    $detail = OrderDetail::query()
+                        ->whereKey($item['detail_id'])
+                        ->where('order_id', $this->order->id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$order || !$detail) {
+                        throw new \RuntimeException('El producto ya no está disponible en esta orden.');
+                    }
+
+                    $product = Product::query()
+                        ->whereKey($detail->product_id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($product) {
+                        $product->increment('stock', $detail->quantity);
+                    }
+
+                    $detail->delete();
+
+                    $total = $order->details()
+                        ->where('cooking_status', '!=', 'cancelled')
+                        ->sum('subtotal');
+                    $order->update([
+                        'total' => $total,
+                        'amount_pending' => $total,
+                    ]);
+                });
             }
+
             unset($this->cart[$productId]);
             $this->calculateCartTotal();
             $this->checkEmptyOrder();
@@ -260,6 +387,47 @@ class OrderCreateComponent extends Component
                 'text' => 'El ítem fue removido del listado.',
                 'icon' => 'success'
             ]);
+        } catch (\Throwable $e) {
+            Log::error('Error al quitar producto de la orden', [
+                'message' => $e->getMessage(),
+                'product_id' => $productId,
+            ]);
+            $this->dispatch('swal', [
+                'title' => 'Error',
+                'text' => 'No se pudo quitar el producto.',
+                'icon' => 'error',
+            ]);
+        }
+    }
+
+    public function updateNote($detailId, $notes): void
+    {
+        if (!is_string($notes) || mb_strlen($notes) > 1000) {
+            $this->dispatch('swal', [
+                'title' => 'Nota no válida',
+                'text' => 'La nota debe tener como máximo 1000 caracteres.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
+        $detail = OrderDetail::query()
+            ->whereKey($detailId)
+            ->where('order_id', $this->order?->id)
+            ->first();
+
+        if (!$detail) {
+            return;
+        }
+
+        $notes = trim($notes);
+        $detail->update(['notes' => $notes ?: null]);
+
+        foreach ($this->cart as $productId => $item) {
+            if ($item['detail_id'] == $detail->id) {
+                $this->cart[$productId]['notes'] = $notes;
+                break;
+            }
         }
     }
 
@@ -352,14 +520,25 @@ class OrderCreateComponent extends Component
 
             foreach ($this->cart as $productId => $item) {
 
-                $product = Product::find($item['product_id']);
+                $product = Product::query()
+                    ->whereKey($item['product_id'])
+                    ->lockForUpdate()
+                    ->first();
 
                 if (!$product) {
                     throw new \Exception("Producto no encontrado");
                 }
 
                 if ($item['detail_id']) {
-                    $oldDetail = OrderDetail::find($item['detail_id']);
+                    $oldDetail = OrderDetail::query()
+                        ->whereKey($item['detail_id'])
+                        ->where('order_id', $this->order->id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$oldDetail) {
+                        throw new \Exception('El detalle de la orden ya no está disponible.');
+                    }
 
                     $difference = $item['quantity'] - $oldDetail->quantity;
 
@@ -399,7 +578,9 @@ class OrderCreateComponent extends Component
                 }
             }
 
-            $newTotal = $this->order->details()->sum('subtotal');
+            $newTotal = $this->order->details()
+                ->where('cooking_status', '!=', 'cancelled')
+                ->sum('subtotal');
 
             $this->order->update([
                 'total' => $newTotal,
@@ -414,9 +595,16 @@ class OrderCreateComponent extends Component
                 $this->itemsToPrint->map(function ($catData) {
 
                     return [
-                        'url' => route('orders.kitchen-print', [
-                            'id' => $this->order->id
-                        ]),
+                        'url' => URL::temporarySignedRoute(
+                            'orders.kitchen-print',
+                            now()->addMinutes(5),
+                            [
+                                'id' => $this->order->id,
+                                ...($this->separate_orders
+                                    ? ['requires_kitchen' => (bool) $catData['requires_kitchen']]
+                                    : []),
+                            ],
+                        ),
                         'printer_name' => $catData['printer_name'],
                         'requires_kitchen'  => $catData['requires_kitchen'],
                     ];
@@ -427,7 +615,7 @@ class OrderCreateComponent extends Component
                 'text' => 'El pedido fue registrado exitosamente.',
                 'icon' => 'success'
             ]);
-            $this->reset('cart');
+            $this->hydrateCartFromOrder();
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error("Error en saveOrderTransaction: " . $e->getMessage());
@@ -435,26 +623,38 @@ class OrderCreateComponent extends Component
         }
     }
 
-    public function markAsServed($detailId)
+    public function markAsServed($detailId): void
     {
-        $detail = OrderDetail::find($detailId);
-        if ($detail) {
-            $detail->update(['cooking_status' => 'served']);
+        $detail = OrderDetail::query()
+            ->whereKey($detailId)
+            ->where('order_id', $this->order?->id)
+            ->first();
 
-            foreach ($this->cart as $productId => $item) {
-                if ($item['detail_id'] == $detailId) {
-                    $this->cart[$productId]['cooking_status'] = 'served';
-                    break;
-                }
-            }
-
+        if (!$detail || $detail->cooking_status !== 'ready') {
             $this->dispatch('swal', [
-                'title' => '¡Servido!',
-                'text' => 'El producto ha sido marcado como entregado.',
-                'icon' => 'success',
-                'timer' => 1000
+                'title' => 'Aún no disponible',
+                'text' => 'Solo se pueden retirar platos marcados como listos por Cocina.',
+                'icon' => 'warning',
+                'timer' => 1500,
             ]);
+            return;
         }
+
+        $detail->update(['cooking_status' => 'served']);
+
+        foreach ($this->cart as $productId => $item) {
+            if ($item['detail_id'] == $detailId) {
+                $this->cart[$productId]['cooking_status'] = 'served';
+                break;
+            }
+        }
+
+        $this->dispatch('swal', [
+            'title' => '¡Entregado!',
+            'text' => 'El plato fue retirado y marcado como entregado.',
+            'icon' => 'success',
+            'timer' => 1000
+        ]);
     }
 
     public function render()

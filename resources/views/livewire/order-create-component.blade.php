@@ -1,8 +1,8 @@
-<div class="p-4 bg-[#fcfcfc] min-h-screen font-sans text-slate-900 antialiased">
+<div wire:poll.5s="refreshReadyOrderAlert" class="p-3 sm:p-4 bg-[#fcfcfc] min-h-screen font-sans text-slate-900 antialiased">
     <div class="max-w-[1400px] mx-auto flex flex-col lg:flex-row gap-6">
 
         <div class="flex-1 min-w-0">
-            <div class="flex gap-2 mb-6">
+            <div class="flex gap-2 mb-4 sm:mb-6">
                 <div class="relative flex-1">
                     <i
                         class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
@@ -10,14 +10,29 @@
                         class="w-full bg-white border border-slate-200 py-2 pl-10 pr-4 rounded-lg text-sm outline-none focus:border-orange-500 transition-all">
                 </div>
 
+                <button type="button" wire:ignore data-waiter-bell-toggle
+                    class="w-10 sm:w-auto sm:px-4 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    title="Activar campana" aria-label="Activar campana" aria-pressed="false">
+                    <i class="fa-solid fa-bell"></i>
+                    <span class="hidden sm:inline" data-waiter-bell-label>Activar campana</span>
+                </button>
+
+                <button type="button" onclick="toggleRestaurantFullscreen()" data-fullscreen-toggle
+                    class="w-10 sm:w-auto sm:px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    title="Pantalla completa" aria-label="Pantalla completa">
+                    <i class="fa-solid fa-expand"></i>
+                    <span class="hidden sm:inline" data-fullscreen-label>Pantalla completa</span>
+                </button>
+
                 <a type="button" href="{{ route('tables.index') }}"
-                    class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+                    class="w-10 sm:w-auto sm:px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    title="Cancelar">
                     <i class="fa-solid fa-xmark"></i>
-                    Cancelar
+                    <span class="hidden sm:inline">Cancelar</span>
                 </a>
             </div>
 
-            <div class="flex flex-wrap gap-2 mb-8">
+            <div class="flex flex-nowrap overflow-x-auto touch-pan-x gap-2 mb-4 sm:mb-6 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0">
                 <button wire:click="$set('category_id', '')"
                     class="px-4 py-1.5 rounded-md text-[11px] font-bold tracking-tight transition-all border {{ $category_id == '' ? 'bg-orange-600 border-orange-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300' }}">
                     TODOS
@@ -30,7 +45,7 @@
                 @endforeach
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+            <div class="grid grid-cols-2 sm:grid-cols-3 2xl:grid-cols-4 gap-2 sm:gap-3">
                 @foreach ($products as $product)
                     <div
                         class="group bg-white border border-slate-100 rounded-xl overflow-hidden hover:shadow-md transition-all">
@@ -43,16 +58,17 @@
                             </div>
                         </div>
 
-                        <div class="p-3">
-                            <h3 class="font-bold text-slate-800 text-sm leading-snug mb-3 line-clamp-1">
+                        <div class="p-2.5 sm:p-3">
+                            <h3 class="font-bold text-slate-800 text-xs sm:text-sm leading-snug mb-2 line-clamp-2 min-h-[2.5rem] sm:min-h-0">
                                 {{ $product->name }}
                             </h3>
                             <div class="flex items-center justify-between">
-                                <span class="text-base font-black text-slate-900">
+                                <span class="text-sm sm:text-base font-black text-slate-900">
                                     {{ $empresa->currency_simbol }}{{ number_format($product->price, 2) }}
                                 </span>
                                 <button wire:click="addToOrder({{ $product->id }})"
-                                    class="bg-orange-600 text-white w-8 h-8 rounded-lg flex items-center justify-center hover:bg-orange-700 active:scale-90 transition-all">
+                                    class="bg-orange-600 text-white w-9 h-9 rounded-lg flex items-center justify-center hover:bg-orange-700 active:scale-90 transition-all"
+                                    aria-label="Añadir {{ $product->name }}">
                                     +
                                 </button>
                             </div>
@@ -66,7 +82,7 @@
             </div>
         </div>
 
-        <div class="w-full lg:w-[400px] shrink-0">
+        <div id="current-order" class="w-full lg:w-[400px] shrink-0 scroll-mt-4">
             <div
                 class="bg-white border border-slate-200 rounded-xl flex flex-col h-[calc(100vh-40px)] sticky top-5 shadow-sm">
 
@@ -130,10 +146,11 @@
                                 class="absolute -top-2.5 right-4 z-10 flex items-center shadow-sm rounded-full overflow-hidden border border-slate-200 bg-white">
                                 @if ($item['detail_id'] && $item['cooking_status'] == 'ready')
                                     <button wire:click="markAsServed({{ $item['detail_id'] }})"
-                                        title="Marcar como entregado"
+                                        title="Retirar y entregar plato"
+                                        aria-label="Retirar y entregar {{ $item['name'] }}"
                                         class="bg-white hover:bg-emerald-600 text-emerald-600 hover:text-white text-[9px] font-black px-3 py-1 transition-all active:scale-95 uppercase tracking-tighter border-r border-slate-100 flex items-center gap-1">
                                         <i class="fas fa-check-double"></i>
-                                        <span>Entregar</span>
+                                        <span>Retirar y entregar</span>
                                     </button>
                                 @endif
 
@@ -207,6 +224,16 @@
                     </div>
 
                     <div class="flex flex-col gap-2">
+                        @can('ordenes.cobrar')
+                            @if ($order?->is_ready_for_checkout)
+                                <a href="{{ route('orders.cashier', ['order' => $order->id, 'quick_checkout' => 1]) }}"
+                                    class="w-full px-5 py-3 bg-emerald-600 text-white text-xs font-black uppercase tracking-widest rounded-lg hover:bg-emerald-700 shadow-md shadow-emerald-100 active:scale-95 transition-all flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-cash-register text-sm"></i>
+                                    Cobrar y liberar mesa
+                                </a>
+                            @endif
+                        @endcan
+
                         @if (count($cart) > 0)
                             <button wire:click="saveOrderTransaction"
                                 class="w-full px-5 py-2.5 bg-blue-600 text-white text-xs font-black uppercase tracking-widest rounded-lg hover:bg-blue-700 shadow-md shadow-blue-100 active:scale-95 transition-all flex items-center justify-center gap-2">
@@ -350,6 +377,18 @@
         </div>
     @endif
 
+    <div id="waiter-ready-toast" class="fixed right-4 top-4 z-[120] hidden max-w-sm rounded-2xl border border-emerald-200 bg-white p-4 shadow-xl" role="status" aria-live="polite">
+        <div class="flex items-start gap-3">
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+                <i class="fa-solid fa-bell"></i>
+            </span>
+            <div>
+                <p class="text-sm font-black text-slate-800">Pedido listo para entregar</p>
+                <p class="text-xs font-semibold text-slate-500" data-waiter-ready-message></p>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal -->
     <div id="printModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 p-4 sm:p-6">
 
@@ -413,7 +452,103 @@
 
 
 <script>
-    document.addEventListener('livewire:init', () => {
+    function toggleRestaurantFullscreen() {
+        if (document.fullscreenElement) {
+            document.exitFullscreen?.();
+            return;
+        }
+
+        if (!document.documentElement.requestFullscreen) {
+            return;
+        }
+
+        document.documentElement.requestFullscreen().catch(() => {});
+    }
+
+    document.addEventListener('fullscreenchange', () => {
+        const isFullscreen = Boolean(document.fullscreenElement);
+
+        document.querySelectorAll('[data-fullscreen-label]').forEach((label) => {
+            label.textContent = isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa';
+        });
+
+        document.querySelectorAll('[data-fullscreen-toggle] i').forEach((icon) => {
+            icon.className = isFullscreen ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+        });
+    });
+
+    const registerWaiterBellListeners = () => {
+        if (window.__waiterBellListenersRegistered) {
+            return;
+        }
+
+        window.__waiterBellListenersRegistered = true;
+        let audioContext;
+        let bellEnabled = false;
+        let toastTimeout;
+
+        const ringBell = () => {
+            if (!bellEnabled || !audioContext) {
+                return;
+            }
+
+            [988, 1319].forEach((frequency, index) => {
+                const oscillator = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                const startAt = audioContext.currentTime + (index * 0.14);
+
+                oscillator.type = 'sine';
+                oscillator.frequency.value = frequency;
+                gain.gain.setValueAtTime(0.0001, startAt);
+                gain.gain.exponentialRampToValueAtTime(0.18, startAt + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.55);
+                oscillator.connect(gain).connect(audioContext.destination);
+                oscillator.start(startAt);
+                oscillator.stop(startAt + 0.56);
+            });
+        };
+
+        document.addEventListener('click', async (event) => {
+            const toggle = event.target.closest('[data-waiter-bell-toggle]');
+
+            if (!toggle) {
+                return;
+            }
+
+            const label = toggle.querySelector('[data-waiter-bell-label]');
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+
+            if (!AudioContext) {
+                label.textContent = 'Sonido no compatible';
+                return;
+            }
+
+            audioContext ??= new AudioContext();
+            await audioContext.resume();
+            bellEnabled = !bellEnabled;
+            toggle.setAttribute('aria-pressed', String(bellEnabled));
+            toggle.title = bellEnabled ? 'Silenciar campana' : 'Activar campana';
+            label.textContent = bellEnabled ? 'Silenciar campana' : 'Activar campana';
+            toggle.classList.toggle('bg-emerald-50', bellEnabled);
+            toggle.classList.toggle('border-emerald-200', bellEnabled);
+            toggle.classList.toggle('text-emerald-700', bellEnabled);
+            ringBell();
+        });
+
+        Livewire.on('order-ready-for-service', (event) => {
+            const toast = document.querySelector('#waiter-ready-toast');
+            const message = document.querySelector('[data-waiter-ready-message]');
+
+            if (!toast || !message) {
+                return;
+            }
+
+            message.textContent = `${event.tableName}: todos los platos de cocina están listos.`;
+            toast.classList.remove('hidden');
+            ringBell();
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => toast.classList.add('hidden'), 5000);
+        });
 
         Livewire.on('auto-print-kitchen', async (printers) => {
 
@@ -423,14 +558,6 @@
             for (const printerData of printers[0]) {
 
                 let finalUrl = printerData.url;
-
-                // SOLO SI SEPARA PEDIDOS
-                @if ($separate_orders)
-
-                    finalUrl +=
-                        '?requires_kitchen=' +
-                        printerData.requires_kitchen;
-                @endif
 
                 // SIN impresión directa
                 @if (!$direct_printing)
@@ -463,8 +590,13 @@
             @endif
 
         });
+    };
 
-    });
+    if (window.Livewire) {
+        registerWaiterBellListeners();
+    } else {
+        document.addEventListener('livewire:init', registerWaiterBellListeners, { once: true });
+    }
 
     function delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));

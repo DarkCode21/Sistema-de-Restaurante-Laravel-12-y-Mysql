@@ -15,7 +15,7 @@
                             <i class="fa-solid fa-check text-[10px]"></i>
                         </span>
                         <span class="text-[11px] font-bold text-slate-600 uppercase tracking-tight">
-                            Marcar como atendido
+                            Retirar y entregar solo platos listos
                         </span>
                     </div>
 
@@ -106,17 +106,26 @@
                                         </div>
                                     </div>
 
-                                    @if ($detail->cooking_status !== 'served')
-                                        <div class="shrink-0">
-                                            <button wire:click="markDetailAsReady({{ $detail->id }})"
-                                                title="Marcar como listo"
-                                                class="bg-slate-100 hover:bg-emerald-500 text-slate-700 hover:text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 border border-slate-200/60 shadow-sm">
-                                                <i class="fa-solid fa-check text-xs"></i>
+                                    @if ($detail->cooking_status === 'ready')
+                                        <div class="shrink-0 flex flex-col items-end gap-2">
+                                            <button wire:click="markDetailAsServed({{ $detail->id }})"
+                                                title="Retirar y entregar plato"
+                                                aria-label="Retirar y entregar {{ $detail->product->name }}"
+                                                class="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-[10px] font-black uppercase tracking-tight text-emerald-700 transition-all hover:bg-emerald-600 hover:text-white active:scale-95">
+                                                <i class="fa-solid fa-check-double text-xs"></i>
+                                                Retirar y entregar
                                             </button>
-                                            {{-- Cancelar Pedido --}}
                                             <button wire:click="cancelarDetalle({{ $detail->id }})"
                                                 title="Cancelar pedido"
-                                                class="bg-slate-100 hover:bg-red-500 text-slate-700 hover:text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 border border-slate-200/60 shadow-sm mt-2">
+                                                class="bg-slate-100 hover:bg-red-500 text-slate-700 hover:text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 border border-slate-200/60 shadow-sm">
+                                                <i class="fa-solid fa-xmark text-xs"></i>
+                                            </button>
+                                        </div>
+                                    @elseif ($detail->cooking_status !== 'served')
+                                        <div class="shrink-0">
+                                            <button wire:click="cancelarDetalle({{ $detail->id }})"
+                                                title="Cancelar pedido"
+                                                class="bg-slate-100 hover:bg-red-500 text-slate-700 hover:text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 border border-slate-200/60 shadow-sm">
                                                 <i class="fa-solid fa-xmark text-xs"></i>
                                             </button>
                                         </div>
@@ -139,7 +148,17 @@
                         </div>
                     </div>
 
-                    <div>
+                    <div class="grid gap-2 p-3 pt-0">
+                        @can('ordenes.cobrar')
+                            @if ($order->is_ready_for_checkout)
+                                <a href="{{ route('orders.cashier', ['order' => $order->id, 'quick_checkout' => 1]) }}"
+                                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
+                                    <i class="fa-solid fa-cash-register text-[11px]"></i>
+                                    Cobrar y liberar mesa
+                                </a>
+                            @endif
+                        @endcan
+
                         <button onclick="abrirVentanaEmergente('{{ route('orders.ticket', $order->id) }}')"
                             type="button"
                             class="w-full bg-slate-900 hover:bg-orange-600 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">

@@ -56,7 +56,7 @@
                         </div>
                         <p class="text-xl font-bold text-slate-900">
                             <span
-                                class="text-slate-400 text-sm font-medium mr-0.5">{{ $caja->opener->business->currency_simbol ?? 'S/' }}</span>{{ number_format($total, 2) }}
+                                class="text-slate-400 text-sm font-medium mr-0.5">{{ $empresa->currency_simbol }}</span>{{ number_format($total, 2) }}
                         </p>
                     </div>
                 @endforeach
@@ -150,19 +150,19 @@
                             <div class="flex justify-between items-center text-sm italic">
                                 <span class="text-slate-500">Monto Inicial</span>
                                 <span
-                                    class="font-semibold text-slate-700">{{ $caja->opener->business->currency_simbol ?? 'S/' }}{{ number_format($caja->opening_amount, 2) }}</span>
+                                    class="font-semibold text-slate-700">{{ $empresa->currency_simbol }}{{ number_format($caja->opening_amount, 2) }}</span>
                             </div>
 
                             <div class="flex justify-between items-center text-sm italic text-rose-600">
                                 <span>Total Egresos (Gastos)</span>
-                                <span class="font-semibold">-{{ $caja->opener->business->currency_simbol ?? 'S/' }}{{ number_format($gastos->sum('amount'), 2) }}</span>
+                                <span class="font-semibold">-{{ $empresa->currency_simbol }}{{ number_format($gastos->sum('amount'), 2) }}</span>
                             </div>
 
                             <div class="mt-6 pt-6 border-t border-slate-100">
                                 <p class="text-indigo-600 text-[10px] font-bold uppercase mb-1">Efectivo Total en Caja</p>
                                 <p class="text-4xl font-bold text-slate-900 tracking-tight">
                                     <span
-                                        class="text-lg font-medium text-slate-400 mr-1">{{ $caja->opener->business->currency_simbol ?? 'S/' }}</span>{{ number_format($caja->current_amount, 2) }}
+                                        class="text-lg font-medium text-slate-400 mr-1">{{ $empresa->currency_simbol }}</span>{{ number_format($caja->current_amount, 2) }}
                                 </p>
                             </div>
                         </div>
@@ -235,7 +235,7 @@
                 didOpen: () => Swal.showLoading(),
                 allowOutsideClick: false
             });
-            fetch(`/cash-registers/${cajaId}/close`, {
+            fetch('{{ route('boxes.close', $caja) }}', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

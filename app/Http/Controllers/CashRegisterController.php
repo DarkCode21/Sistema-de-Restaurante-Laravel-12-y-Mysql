@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CashRegister;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 
 class CashRegisterController extends Controller
 {
@@ -42,27 +43,29 @@ class CashRegisterController extends Controller
         return view('cashRegister.movements', compact('caja', 'pagosPorMetodo', 'gastos', 'id'));
     }
 
-    public function close(Request $request, $id)
+    public function close($id)
     {
-        try {
-            $caja = CashRegister::findOrFail($id);
+        $caja = DB::transaction(function () use ($id) {
+            $caja = CashRegister::query()
+                ->whereKey($id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-            // Lógica de cierre (cambiar estado, guardar fecha, etc.)
+            abort_unless($caja->status === 'open', 422, 'La caja ya está cerrada.');
+
             $caja->update([
                 'status' => 'closed',
                 'closed_at' => now(),
-                'closing_amount' => $caja->current_amount
+                'closed_by' => auth()->id(),
             ]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Caja cerrada con éxito'
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 500);
-        }
+            return $caja;
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Caja cerrada con éxito',
+            'cash_register_id' => $caja->id,
+        ]);
     }
 }

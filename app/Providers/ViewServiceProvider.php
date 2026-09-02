@@ -22,7 +22,15 @@ class ViewServiceProvider extends ServiceProvider
     public function boot(): void
     {
         View::composer('*', function ($view) {
-            $empresa = Setting::first();
+            $empresa = Setting::first() ?? new Setting([
+                'company_name' => config('app.name', 'Ceviche Flow'),
+                'currency_simbol' => 'S/',
+                'logo_path' => null,
+                'favicon_path' => null,
+                'direct_printing' => false,
+                'separate_orders' => false,
+            ]);
+
             $view->with('empresa', $empresa);
         });
     }

@@ -36,6 +36,7 @@ class ProductComponent extends Component
     {
         $products = Product::with('category')
             ->where('name', 'like', '%' . $this->search . '%')
+            ->orderByDesc('status')
             ->latest()
             ->paginate(10);
 

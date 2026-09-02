@@ -51,15 +51,7 @@ class DashboardController extends Controller
         ->get();
 
     // RANKING PRODUCTOS
-    $rankingProductos = SaleDetail::select('product_id', DB::raw('SUM(quantity) as total_qty'), DB::raw('SUM(subtotal) as total_money'))
-        ->whereHas('sale', function ($q) use ($hoy) {
-            $q->whereDate('paid_at', $hoy);
-        })
-        ->with('product')
-        ->groupBy('product_id')
-        ->orderByDesc('total_qty')
-        ->take(5)
-        ->get();
+    $rankingProductos = $this->topProductsForDate($hoy);
 
     // GRÁFICO VENTAS MENSUALES (ÚLTIMOS 6 MESES)
     $seisMesesAtras = Carbon::now()->subMonths(5)->startOfMonth();
@@ -120,4 +112,24 @@ class DashboardController extends Controller
         'chartMetodosData'
     ));
 }
+
+    public function topProductsForDate(Carbon $date)
+    {
+        return SaleDetail::select(
+            'product_id',
+            DB::raw('SUM(quantity) as total_qty'),
+            DB::raw('SUM(subtotal) as total_money'),
+        )
+            ->whereHas('sale', function ($query) use ($date) {
+                $query->whereDate('paid_at', $date);
+            })
+            ->whereHas('product', function ($query) {
+                $query->where('status', true);
+            })
+            ->with('product')
+            ->groupBy('product_id')
+            ->orderByDesc('total_qty')
+            ->take(5)
+            ->get();
+    }
 }

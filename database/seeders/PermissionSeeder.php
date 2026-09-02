@@ -72,6 +72,7 @@ class PermissionSeeder extends Seeder
             'mesero' => [
                 'ordenes.ver',
                 'ordenes.crear',
+                'ordenes.cobrar',
                 'mesas.ver',
                 'productos.ver',
                 'productos.crear',

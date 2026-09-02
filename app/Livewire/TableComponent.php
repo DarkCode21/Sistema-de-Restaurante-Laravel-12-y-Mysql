@@ -28,7 +28,12 @@ class TableComponent extends Component
 
     public function render()
     {
-        $tables = Table::where('name', 'like', '%' . $this->search . '%')
+        $tables = Table::with(['orders' => function ($query) {
+            $query->where('status', 'abierto')
+                ->whereHas('details', fn ($details) => $details->where('cooking_status', '!=', 'cancelled'))
+                ->with('details');
+        }])
+            ->where('name', 'like', '%' . $this->search . '%')
             ->latest()
             ->paginate(10);
 

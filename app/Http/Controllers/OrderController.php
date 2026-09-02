@@ -40,9 +40,7 @@ class OrderController extends Controller
 
     public function cashier()
     {
-        if (!Auth::user()->hasAnyRole(['admin', 'cajero'])) {
-            abort(403, 'No tienes permiso para acceder a la caja.');
-        }
+        abort_unless(Auth::user()?->can('ordenes.cobrar'), 403, 'No tienes permiso para acceder a la caja.');
 
         return view('orders.cashier');
     }

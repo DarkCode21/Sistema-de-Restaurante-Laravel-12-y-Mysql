@@ -15,8 +15,12 @@ Route::get('/', function () {
     return view('auth.login');
 });
 
-Route::get('/printer/{id}', [OrderController::class, 'print'])->name('orders.kitchen-print');
-Route::get('/printer-local/{id}', [SaleController::class, 'receipt'])->name('sales.print-local');
+Route::get('/printer/{id}', [OrderController::class, 'print'])
+    ->name('orders.kitchen-print')
+    ->middleware('signed');
+Route::get('/printer-local/{id}', [SaleController::class, 'receipt'])
+    ->name('sales.print-local')
+    ->middleware('signed');
 
 Route::middleware('auth')->group(function () {
 
@@ -40,10 +44,11 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/boxes', [CashRegisterController::class, 'index'])->name('boxes.index')->middleware('can:cajas.ver');
     Route::get('/boxes/{id}', [CashRegisterController::class, 'movements'])->name('boxes.movements')->middleware('can:cajas.movimientos');
+    Route::post('/boxes/{id}/close', [CashRegisterController::class, 'close'])->name('boxes.close')->middleware('can:cajas.cerrar');
 
     Route::get('/tables', [CrudController::class, 'table'])->name('tables.index')->middleware('can:mesas.ver');
 
-    Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
+    Route::get('/orders', [OrderController::class, 'index'])->name('orders.index')->middleware('can:ordenes.ver');
 
     Route::get('/orders/chef', [OrderController::class, 'chef'])->name('orders.chef');
     Route::get('/orders/cashier', [OrderController::class, 'cashier'])->name('orders.cashier')->middleware('can:ordenes.cobrar');

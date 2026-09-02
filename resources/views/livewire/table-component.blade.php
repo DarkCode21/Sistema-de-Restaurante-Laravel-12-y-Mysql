@@ -3,7 +3,7 @@
 
         {{-- HEADER: ALTA DENSIDAD / MINIMALISTA --}}
         <header
-            class="flex items-center justify-between bg-white border border-slate-200 px-6 py-4 rounded-xl shadow-sm">
+            class="flex items-center justify-between bg-white border border-slate-200 px-4 sm:px-6 py-4 rounded-xl shadow-sm">
             <div class="flex items-center gap-5">
                 <div class="flex flex-col leading-tight">
                     <h1 class="text-lg font-black tracking-tighter text-slate-900 uppercase">
@@ -12,19 +12,29 @@
                 </div>
             </div>
 
-            @can('mesas.crear')
-                <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2">
+                <button type="button" onclick="toggleRestaurantFullscreen()" data-fullscreen-toggle
+                    class="w-10 h-10 inline-flex items-center justify-center rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                    title="Pantalla completa" aria-label="Pantalla completa">
+                    <i class="fa-solid fa-expand"></i>
+                </button>
+                @can('mesas.crear')
                     <button wire:click="create"
                         class="px-5 py-2.5 bg-slate-900 hover:bg-orange-600 text-white text-[11px] font-black rounded-lg transition-all active:scale-95 shadow-lg shadow-slate-200 uppercase tracking-widest">
                         + Añadir
                     </button>
-                </div>
-            @endcan
+                @endcan
+            </div>
 
         </header>
 
-        <div id="floor-canvas"
-            class="relative w-full min-h-[820px] bg-slate-50 rounded-xl border border-slate-200 shadow-[inset_0_2px_10px_rgba(0,0,0,0.05)] overflow-hidden transition-all">
+        <p class="px-1 text-xs font-semibold text-slate-500 sm:hidden">
+            <i class="fa-solid fa-arrows-left-right mr-1 text-orange-600"></i> Desliza el plano para ver todas las mesas.
+        </p>
+
+        <div data-floor-scroll class="overflow-x-auto touch-pan-x overscroll-x-contain rounded-xl pb-2">
+            <div id="floor-canvas"
+                class="relative min-w-[1200px] min-h-[820px] bg-slate-50 rounded-xl border border-slate-200 shadow-[inset_0_2px_10px_rgba(0,0,0,0.05)] overflow-hidden transition-all">
 
             <div class="absolute inset-0 opacity-[0.2]"
                 style="background-image: radial-gradient(#64748b 1px, transparent 1px); background-size: 40px 40px;">
@@ -40,7 +50,7 @@
 
                             <div class="relative w-40 h-40 flex items-center justify-center">
                                 <img src="{{ asset('images/table.jpg') }}"
-                                    class="w-36 h-36 object-contain transition-all duration-200 cursor-grab active:cursor-grabbing select-none drop-shadow-[0_20px_20px_rgba(0,0,0,0.2)] group-hover:scale-105"
+                                    class="w-36 h-36 object-contain transition-all duration-200 cursor-default md:cursor-grab md:active:cursor-grabbing select-none drop-shadow-[0_20px_20px_rgba(0,0,0,0.2)] group-hover:scale-105"
                                     style="mix-blend-mode: multiply;" alt="Mesa">
 
                                 <div class="absolute top-2 right-2 z-10">
@@ -98,11 +108,22 @@
                                     </div>
                                 </div>
                                 @can('ordenes.crear')
+                                    @php($openOrder = $table->orders->first())
                                     <div class="grid grid-cols-1 gap-2">
                                         <a href="{{ route('orders.create', encrypt($table->id)) }}"
                                             class="flex items-center justify-center py-2 bg-orange-600 text-white text-[10px] font-bold uppercase rounded-lg hover:bg-orange-700 transition-all shadow-sm">
                                             Gestionar
                                         </a>
+
+                                        @can('ordenes.cobrar')
+                                            @if ($openOrder?->is_ready_for_checkout)
+                                                <a href="{{ route('orders.cashier', ['order' => $openOrder->id, 'quick_checkout' => 1]) }}"
+                                                    class="flex items-center justify-center gap-1.5 py-2 bg-emerald-600 text-white text-[10px] font-black uppercase rounded-lg hover:bg-emerald-700 transition-all shadow-sm">
+                                                    <i class="fa-solid fa-cash-register"></i>
+                                                    Cobrar y liberar mesa
+                                                </a>
+                                            @endif
+                                        @endcan
                                     </div>
                                 @endcan
                             </div>
@@ -115,6 +136,7 @@
                         </span>
                     </div>
                 @endforelse
+            </div>
             </div>
         </div>
     </div>
@@ -185,7 +207,20 @@
 
     <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
     <script>
+        function toggleRestaurantFullscreen() {
+            if (document.fullscreenElement) {
+                document.exitFullscreen?.();
+                return;
+            }
+
+            document.documentElement.requestFullscreen?.().catch(() => {});
+        }
+
         document.addEventListener('livewire:init', function() {
+            if (!window.matchMedia('(min-width: 768px)').matches) {
+                return;
+            }
+
             interact('.draggable-table').draggable({
                 inertia: true,
                 modifiers: [

@@ -37,7 +37,7 @@
                         @foreach ($order->details as $detail)
                             <div class="flex items-center gap-2 mt-1">
                                 <label class="relative inline-flex items-center cursor-pointer scale-75 origin-left">
-                                    <input type="checkbox" wire:model.live="selectedDetails" value="{{ $detail->id }}"
+                                    <input type="checkbox" wire:model.live="selectedDetails.{{ $order->id }}.{{ $detail->id }}"
                                         class="sr-only peer">
                                     <div
                                         class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-600">
@@ -97,10 +97,10 @@
                         </div>
                         <div class="grid grid-cols-2 gap-2 mt-1 pt-2 border-t border-slate-200/60">
                             <button wire:click="openSplitPayment({{ $order->id }})"
-                                @if (count($selectedDetails) === 0) disabled @endif
+                                @if (count(array_filter($selectedDetails[$order->id] ?? [])) === 0) disabled @endif
                                 class="px-4 py-2 bg-white border border-orange-600 text-orange-600 text-xs font-black uppercase tracking-widest rounded-lg hover:bg-orange-50 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
                                 <i class="fas fa-list-check text-sm"></i>
-                                Separar ({{ count($selectedDetails) }})
+                                Separar ({{ count(array_filter($selectedDetails[$order->id] ?? [])) }})
                             </button>
                             <button wire:click="openFullPayment({{ $order->id }})"
                                 class="px-5 py-2 bg-orange-600 text-white text-xs font-black uppercase tracking-widest rounded-lg hover:bg-orange-700 shadow-md shadow-orange-100 active:scale-95 transition-all flex items-center justify-center gap-2">
@@ -152,7 +152,14 @@
 
                 <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
                     <div>
-                        <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Panel de Cobro</h2>
+                        <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                            {{ $quickCheckout ? 'Cobrar y liberar mesa' : 'Panel de Cobro' }}
+                        </h2>
+                        @if ($quickCheckout && $this->order?->table)
+                            <p class="mt-1 text-xs font-black uppercase tracking-wide text-emerald-700">
+                                Mesa {{ $this->order->table->name }} · servicio completo
+                            </p>
+                        @endif
                         <p class="text-3xl font-black text-slate-800 tracking-tight">
                             <span
                                 class="text-orange-600 font-light">{{ $empresa->currency_simbol }}</span>{{ number_format($paymentAmount, 2) }}
@@ -360,7 +367,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                     d="M5 13l4 4L19 7"></path>
                             </svg>
-                            Finalizar Operación
+                            {{ $quickCheckout ? 'Cobrar y liberar mesa' : 'Finalizar Operación' }}
                         @endif
 
                     </button>

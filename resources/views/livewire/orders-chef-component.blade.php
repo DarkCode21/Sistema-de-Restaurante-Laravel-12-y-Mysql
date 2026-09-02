@@ -1,4 +1,4 @@
-<div class="p-6 bg-[#fcfcfc] min-h-screen font-sans text-slate-900 antialiased">
+<div wire:poll.5s.keep-alive="refreshForAlerts" class="p-6 bg-[#fcfcfc] min-h-screen font-sans text-slate-900 antialiased">
     <div class="max-w-[1400px] mx-auto">
 
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -19,8 +19,14 @@
             </div>
 
             <div class="flex items-center gap-3">
+                <button type="button" wire:ignore data-alert-bell-toggle
+                    class="shrink-0 inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-700 transition-colors hover:bg-amber-100"
+                    aria-pressed="false">
+                    <i class="fa-solid fa-bell"></i>
+                    <span data-alert-bell-label>Activar campana</span>
+                </button>
                 <input wire:model.live="search" type="text" placeholder="Buscar mesa..."
-                    class="bg-white border border-slate-200 py-2 px-4 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500/20 transition-all w-64 shadow-sm">
+                    class="min-w-0 flex-1 bg-white border border-slate-200 py-2 px-4 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500/20 transition-all md:w-64 shadow-sm">
             </div>
         </div>
 
@@ -107,7 +113,7 @@
 
                     <div>
                         <button
-                            onclick="abrirVentanaEmergente('{{ route('orders.kitchen-print', ['id' => $order->id, 'requires_kitchen' => 1]) }}')"
+                            onclick="abrirVentanaEmergente('{{ $this->kitchenPrintUrl($order) }}')"
                             type="button"
                             class="w-full bg-slate-900 hover:bg-orange-600 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
                             <i class="fa-solid fa-ticket text-[11px]"></i>
@@ -137,4 +143,100 @@
             {{ $orders->links() }}
         </div>
     </div>
+
+    <div id="kitchen-alert-toast" class="fixed right-4 top-4 z-[120] hidden max-w-sm rounded-2xl border border-orange-200 bg-white p-4 shadow-xl" role="status" aria-live="polite">
+        <div class="flex items-start gap-3">
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
+                <i class="fa-solid fa-bell"></i>
+            </span>
+            <div>
+                <p class="text-sm font-black text-slate-800">Nueva comanda en cocina</p>
+                <p class="text-xs font-semibold text-slate-500" data-kitchen-alert-message></p>
+            </div>
+        </div>
+    </div>
 </div>
+
+<script>
+    const registerKitchenBellListeners = () => {
+        if (window.__kitchenBellListenersRegistered) {
+            return;
+        }
+
+        window.__kitchenBellListenersRegistered = true;
+        let audioContext;
+        let bellEnabled = false;
+        let toastTimeout;
+
+        const ringBell = () => {
+            if (!bellEnabled || !audioContext) {
+                return;
+            }
+
+            [880, 1175].forEach((frequency, index) => {
+                const oscillator = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                const startAt = audioContext.currentTime + (index * 0.14);
+
+                oscillator.type = 'sine';
+                oscillator.frequency.value = frequency;
+                gain.gain.setValueAtTime(0.0001, startAt);
+                gain.gain.exponentialRampToValueAtTime(0.18, startAt + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.55);
+                oscillator.connect(gain).connect(audioContext.destination);
+                oscillator.start(startAt);
+                oscillator.stop(startAt + 0.56);
+            });
+        };
+
+        document.addEventListener('click', async (event) => {
+            const toggle = event.target.closest('[data-alert-bell-toggle]');
+
+            if (!toggle) {
+                return;
+            }
+
+            const label = toggle.querySelector('[data-alert-bell-label]');
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+
+            if (!AudioContext) {
+                label.textContent = 'Sonido no compatible';
+                return;
+            }
+
+            audioContext ??= new AudioContext();
+            await audioContext.resume();
+            bellEnabled = !bellEnabled;
+            toggle.setAttribute('aria-pressed', String(bellEnabled));
+            label.textContent = bellEnabled ? 'Silenciar campana' : 'Activar campana';
+            toggle.classList.toggle('bg-emerald-50', bellEnabled);
+            toggle.classList.toggle('border-emerald-200', bellEnabled);
+            toggle.classList.toggle('text-emerald-700', bellEnabled);
+            ringBell();
+        });
+
+        Livewire.on('kitchen-order-received', (event) => {
+            const toast = document.querySelector('#kitchen-alert-toast');
+            const message = document.querySelector('[data-kitchen-alert-message]');
+            const count = event.orderIds?.length ?? 1;
+
+            if (!toast || !message) {
+                return;
+            }
+
+            message.textContent = count === 1
+                ? 'Hay una nueva orden esperando preparación.'
+                : `Hay ${count} nuevas órdenes esperando preparación.`;
+            toast.classList.remove('hidden');
+            ringBell();
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => toast.classList.add('hidden'), 5000);
+        });
+    };
+
+    if (window.Livewire) {
+        registerKitchenBellListeners();
+    } else {
+        document.addEventListener('livewire:init', registerKitchenBellListeners, { once: true });
+    }
+</script>

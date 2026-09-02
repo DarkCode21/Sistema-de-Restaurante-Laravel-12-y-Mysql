@@ -134,6 +134,15 @@ class OrdersCashierComponent extends Component
             return;
         }
 
+        if (!$order->isReadyForCheckout()) {
+            $this->dispatch('swal', [
+                'title' => 'Pedido en cocina',
+                'text' => 'Solo se puede cobrar después de entregar los platos de cocina.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
         $details = $order->details()
             ->whereIn('id', $selectedDetailIds)
             ->where('cooking_status', '!=', 'cancelled')
@@ -162,6 +171,15 @@ class OrdersCashierComponent extends Component
             ->find($order_id);
 
         if (!$order) {
+            return;
+        }
+
+        if (!$order->isReadyForCheckout()) {
+            $this->dispatch('swal', [
+                'title' => 'Pedido en cocina',
+                'text' => 'Solo se puede cobrar después de entregar los platos de cocina.',
+                'icon' => 'warning',
+            ]);
             return;
         }
 
@@ -285,8 +303,8 @@ class OrdersCashierComponent extends Component
                     throw new \RuntimeException('La orden ya no está disponible.');
                 }
 
-                if ($this->quickCheckout && !$order->isReadyForCheckout()) {
-                    throw new \RuntimeException('La orden aún no está lista para cobro rápido.');
+                if (!$order->isReadyForCheckout()) {
+                    throw new \RuntimeException('La orden aún no está lista para cobro.');
                 }
 
                 $cashRegister = CashRegister::query()

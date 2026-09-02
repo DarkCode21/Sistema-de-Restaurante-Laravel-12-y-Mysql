@@ -32,6 +32,11 @@ class Order extends Model
         return $this->hasMany(OrderDetail::class);
     }
 
+    public function corrections()
+    {
+        return $this->hasMany(OrderCorrection::class);
+    }
+
     public function isReadyForCheckout(): bool
     {
         if ($this->status !== 'abierto') {

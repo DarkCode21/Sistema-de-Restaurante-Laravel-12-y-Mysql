@@ -3,13 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
-use App\Models\OrderDetail;
+use App\Models\OrderCorrection;
 use App\Models\Table;
 use Barryvdh\DomPDF\Facade\Pdf;
-use chillerlan\QRCode\QRCode;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
@@ -58,40 +58,81 @@ class OrderController extends Controller
 
     public function print(Request $request, $id)
     {
-        $query = Order::with([
-            'table',
-            'details' => function ($q) use ($request) {
+        $detailIds = collect($request->input('detail_ids', []))
+            ->filter(fn ($detailId) => is_numeric($detailId) && (int) $detailId > 0)
+            ->map(fn ($detailId) => (int) $detailId)
+            ->unique()
+            ->values();
+        $correctionIds = collect($request->input('correction_ids', []))
+            ->filter(fn ($correctionId) => is_numeric($correctionId) && (int) $correctionId > 0)
+            ->map(fn ($correctionId) => (int) $correctionId)
+            ->unique()
+            ->values();
+        $isCorrection = $request->boolean('correction');
 
-                if ($request->has('requires_kitchen')) {
+        [$order, $details, $corrections] = DB::transaction(function () use ($request, $id, $detailIds, $correctionIds, $isCorrection) {
+            $order = Order::query()
+                ->with('table')
+                ->whereKey($id)
+                ->when(!$isCorrection, fn ($query) => $query->where('status', 'abierto'))
+                ->lockForUpdate()
+                ->firstOrFail();
 
-                    $requiresKitchen = $request->boolean('requires_kitchen');
+            if ($isCorrection) {
+                $corrections = OrderCorrection::query()
+                    ->where('order_id', $order->id)
+                    ->whereIn('id', $correctionIds)
+                    ->when($request->has('requires_kitchen'), fn ($query) => $query->where('requires_kitchen', $request->boolean('requires_kitchen')))
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
 
-                    $q->where('requires_kitchen', $requiresKitchen);
+                foreach ($corrections as $correction) {
+                    if (!$correction->printed_at) {
+                        $correction->update(['printed_at' => now()]);
+                    }
                 }
 
-                $q->whereIn('cooking_status', ['pending', 'in_progress'])
-                    ->with('product');
-            },
-        ]);
+                $order->setRelation('details', collect());
 
-        $order = $query
-            ->where('status', 'abierto')
-            ->findOrFail($id);
+                return [$order, collect(), $corrections];
+            }
 
-        if ($order->details->isEmpty()) {
+            $query = $order->details()->with('product');
+
+            if ($request->has('requires_kitchen')) {
+                $query->where('requires_kitchen', $request->boolean('requires_kitchen'));
+            }
+
+            if ($detailIds->isNotEmpty()) {
+                $query->whereIn('id', $detailIds)
+                    ->where('cooking_status', 'pending')
+                    ->where('is_printed', false);
+            } else {
+                // A kitchen user may deliberately reprint the active ticket.
+                $query->whereIn('cooking_status', ['pending', 'in_progress']);
+            }
+
+            $details = $query->lockForUpdate()->get();
+
+            foreach ($details as $detail) {
+                $detail->update([
+                    'cooking_status' => 'in_progress',
+                    'is_printed' => true,
+                ]);
+            }
+
+            $order->setRelation('details', $details);
+
+            return [$order, $details, collect()];
+        });
+
+        if (($isCorrection ? $corrections : $details)->isEmpty()) {
 
             return response()->json([
                 'message' => 'No hay productos pendientes para este destino.'
             ], 404);
         }
-
-        // ACTUALIZAR ESTADO
-        OrderDetail::whereIn(
-            'id',
-            $order->details->pluck('id')
-        )->update([
-            'cooking_status' => 'in_progress'
-        ]);
 
         $width_mm = env('IMPRESION_SIZE') - 10;
         $height_mm = 297;
@@ -99,15 +140,16 @@ class OrderController extends Controller
         $width_pt = $this->mmToPoints($width_mm);
         $height_pt = $this->mmToPoints($height_mm);
 
-        $pdf = Pdf::loadView('orders.receipt', compact('order'))
+        $pdf = Pdf::loadView('orders.receipt', compact('order', 'isCorrection', 'corrections'))
             ->setPaper([0, 0, $width_pt, $height_pt], 'portrait');
 
         return $pdf->stream("ticket_{$id}.pdf");
     }
 
-    public function ticket(Request $request, $id)
+    public function ticket($id)
     {
-        $requiresKitchen = $request->boolean('requires_kitchen');
+        $isCorrection = false;
+        $corrections = collect();
 
         $order = Order::with([
             'table',
@@ -129,7 +171,7 @@ class OrderController extends Controller
 
         $height_pt = $this->mmToPoints($height_mm);
 
-        $pdf = Pdf::loadView('orders.receipt', compact('order'))
+        $pdf = Pdf::loadView('orders.receipt', compact('order', 'isCorrection', 'corrections'))
             ->setPaper([0, 0, $width_pt, $height_pt], 'portrait');
 
         return $pdf->stream("ticket_{$id}.pdf");

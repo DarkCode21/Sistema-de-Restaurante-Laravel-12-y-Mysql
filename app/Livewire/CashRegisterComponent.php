@@ -3,11 +3,11 @@
 namespace App\Livewire;
 
 use App\Models\CashRegister;
-use App\Models\Sale;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\On;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class CashRegisterComponent extends Component
 {
@@ -70,12 +70,53 @@ class CashRegisterComponent extends Component
             $data['status'] = 'open';
             $data['opened_by'] = Auth::id();
             $data['opened_at'] = now();
-        }
 
-        CashRegister::updateOrCreate(
-            ['id' => $this->cash_register_id],
-            $data
-        );
+            CashRegister::create($data);
+        } else {
+            $updated = DB::transaction(function () use ($data) {
+                $register = CashRegister::query()
+                    ->whereKey($this->cash_register_id)
+                    ->where('status', 'open')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$register) {
+                    return 'closed';
+                }
+
+                $hasMovements = $register->sales()->exists() || $register->expenses()->exists();
+
+                if ($hasMovements && (float) $register->opening_amount !== (float) $data['opening_amount']) {
+                    return 'has_movements';
+                }
+
+                if (!$hasMovements) {
+                    $data['current_amount'] = $data['opening_amount'];
+                }
+
+                $register->update($data);
+
+                return 'updated';
+            });
+
+            if ($updated === 'closed') {
+                $this->dispatch('swal', [
+                    'title' => 'Caja cerrada',
+                    'text' => 'Una caja cerrada no se puede modificar.',
+                    'icon' => 'warning',
+                ]);
+                return;
+            }
+
+            if ($updated === 'has_movements') {
+                $this->dispatch('swal', [
+                    'title' => 'Caja con movimientos',
+                    'text' => 'No se puede cambiar el monto de apertura después de registrar movimientos.',
+                    'icon' => 'warning',
+                ]);
+                return;
+            }
+        }
 
         $this->dispatch('swal', [
             'title' => $this->cash_register_id ? '¡Actualizado!' : '¡Caja Abierta!',
@@ -106,17 +147,30 @@ class CashRegisterComponent extends Component
     #[On('delete-confirmed')]
     public function destroy($id)
     {
-        //Verificar que el registro no esté abierto o tenga movimientos asociados antes de eliminar
-        $sale = Sale::where('cash_register_id', $id)->first();
-        if ($sale) {
+        $deleted = DB::transaction(function () use ($id) {
+            $register = CashRegister::query()
+                ->whereKey($id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($register->status !== 'open' || $register->sales()->exists() || $register->expenses()->exists()) {
+                return false;
+            }
+
+            $register->delete();
+
+            return true;
+        });
+
+        if (!$deleted) {
             $this->dispatch('swal', [
                 'title' => 'No se puede eliminar',
-                'text'  => 'Este registro de caja tiene movimientos asociados',
+                'text'  => 'La caja está cerrada o tiene movimientos asociados.',
                 'icon'  => 'error',
             ]);
             return;
         }
-        CashRegister::findOrFail($id)->delete();
+
         $this->dispatch('swal', [
             'title' => 'Eliminado',
             'text'  => 'Registro de caja eliminado',

@@ -95,19 +95,25 @@
                                 {{ $empresa->currency_simbol }}{{ number_format($order->amount_pending, 2) }}
                             </span>
                         </div>
-                        <div class="grid grid-cols-2 gap-2 mt-1 pt-2 border-t border-slate-200/60">
-                            <button wire:click="openSplitPayment({{ $order->id }})"
-                                @if (count(array_filter($selectedDetails[$order->id] ?? [])) === 0) disabled @endif
-                                class="px-4 py-2 bg-white border border-orange-600 text-orange-600 text-xs font-black uppercase tracking-widest rounded-lg hover:bg-orange-50 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
-                                <i class="fas fa-list-check text-sm"></i>
-                                Separar ({{ count(array_filter($selectedDetails[$order->id] ?? [])) }})
-                            </button>
-                            <button wire:click="openFullPayment({{ $order->id }})"
-                                class="px-5 py-2 bg-orange-600 text-white text-xs font-black uppercase tracking-widest rounded-lg hover:bg-orange-700 shadow-md shadow-orange-100 active:scale-95 transition-all flex items-center justify-center gap-2">
-                                <i class="fas fa-cash-register text-sm"></i>
-                                Cobrar Total
-                            </button>
-                        </div>
+                        @if ($order->is_ready_for_checkout)
+                            <div class="grid grid-cols-2 gap-2 mt-1 pt-2 border-t border-slate-200/60">
+                                <button wire:click="openSplitPayment({{ $order->id }})"
+                                    @if (count(array_filter($selectedDetails[$order->id] ?? [])) === 0) disabled @endif
+                                    class="px-4 py-2 bg-white border border-orange-600 text-orange-600 text-xs font-black uppercase tracking-widest rounded-lg hover:bg-orange-50 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                                    <i class="fas fa-list-check text-sm"></i>
+                                    Separar ({{ count(array_filter($selectedDetails[$order->id] ?? [])) }})
+                                </button>
+                                <button wire:click="openFullPayment({{ $order->id }})"
+                                    class="px-5 py-2 bg-orange-600 text-white text-xs font-black uppercase tracking-widest rounded-lg hover:bg-orange-700 shadow-md shadow-orange-100 active:scale-95 transition-all flex items-center justify-center gap-2">
+                                    <i class="fas fa-cash-register text-sm"></i>
+                                    Cobrar Total
+                                </button>
+                            </div>
+                        @else
+                            <p class="mt-3 border-t border-slate-200/60 pt-3 text-center text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                Esperando entrega de cocina
+                            </p>
+                        @endif
                     </div>
 
                     <div>

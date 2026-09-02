@@ -49,14 +49,14 @@ it('loads an existing open order when managing an occupied table', function () {
 
     $component = Livewire::test(OrderCreateComponent::class, ['table' => $table])
         ->assertSet('order.id', $order->id)
-        ->assertSet("cart.{$product->id}.detail_id", $detail->id)
-        ->assertSet("cart.{$product->id}.quantity", 2)
+        ->assertSet("cart.detail-{$detail->id}.detail_id", $detail->id)
+        ->assertSet("cart.detail-{$detail->id}.quantity", 2)
         ->assertSet('cartTotal', 60.0)
         ->assertSee('Parrilla cargada');
 
-    $component->call('increment', $product->id)
+    $component->call('increment', "detail-{$detail->id}")
         ->call('saveOrderTransaction')
-        ->assertSet("cart.{$product->id}.quantity", 3)
+        ->assertSet("cart.detail-{$detail->id}.quantity", 3)
         ->assertSet('cartTotal', 90.0);
 });
 
@@ -101,10 +101,10 @@ it('shows a ready item to the waiter for pickup and delivery', function () {
     $detail->update(['cooking_status' => 'ready']);
 
     $waiter->call('refreshReadyOrderAlert')
-        ->assertSet("cart.{$product->id}.cooking_status", 'ready')
+        ->assertSet("cart.detail-{$detail->id}.cooking_status", 'ready')
         ->assertSee('Retirar y entregar')
         ->call('markAsServed', $detail->id)
-        ->assertSet("cart.{$product->id}.cooking_status", 'served');
+        ->assertSet("cart.detail-{$detail->id}.cooking_status", 'served');
 
     expect($detail->refresh()->cooking_status)->toBe('served');
 });

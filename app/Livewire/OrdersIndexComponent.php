@@ -5,8 +5,11 @@ namespace App\Livewire;
 use Livewire\Component;
 use App\Models\Order;
 use App\Models\OrderDetail;
+use App\Models\OrderCorrection;
 use App\Models\Product;
+use App\Models\Setting;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\URL;
 use Livewire\WithPagination;
 
 class OrdersIndexComponent extends Component
@@ -18,9 +21,13 @@ class OrdersIndexComponent extends Component
 
     public function markDetailAsServed($detailId): void
     {
-        $detail = OrderDetail::find($detailId);
+        $updated = OrderDetail::query()
+            ->whereKey($detailId)
+            ->where('cooking_status', 'ready')
+            ->whereHas('order', fn ($query) => $query->where('status', 'abierto'))
+            ->update(['cooking_status' => 'served']);
 
-        if (!$detail || $detail->cooking_status !== 'ready') {
+        if ($updated !== 1) {
             $this->dispatch('swal', [
                 'title' => 'Aún no disponible',
                 'text' => 'Solo se pueden retirar platos marcados como listos por Cocina.',
@@ -29,10 +36,6 @@ class OrdersIndexComponent extends Component
             ]);
             return;
         }
-
-        $detail->update([
-            'cooking_status' => 'served'
-        ]);
 
         $this->dispatch('swal', [
             'title' => '¡Entregado!',
@@ -44,24 +47,36 @@ class OrdersIndexComponent extends Component
 
     public function cancelarDetalle($detailId): void
     {
-        $wasCancelled = DB::transaction(function () use ($detailId) {
-            $detail = OrderDetail::query()
+        $result = DB::transaction(function () use ($detailId) {
+            $currentDetail = OrderDetail::query()
                 ->whereKey($detailId)
-                ->lockForUpdate()
                 ->first();
 
-            if (!$detail || in_array($detail->cooking_status, ['cancelled', 'served'], true)) {
-                return false;
+            if (!$currentDetail) {
+                return null;
             }
 
             $order = Order::query()
-                ->whereKey($detail->order_id)
+                ->whereKey($currentDetail->order_id)
+                ->where('status', 'abierto')
                 ->lockForUpdate()
                 ->first();
 
             if (!$order) {
-                return false;
+                return null;
             }
+
+            $detail = OrderDetail::query()
+                ->whereKey($detailId)
+                ->where('order_id', $order->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$detail || in_array($detail->cooking_status, ['cancelled', 'served'], true)) {
+                return null;
+            }
+
+            $wasSent = $detail->is_printed || $detail->cooking_status !== 'pending';
 
             $detail->update([
                 'cooking_status' => 'cancelled'
@@ -75,6 +90,8 @@ class OrdersIndexComponent extends Component
             if ($product) {
                 $product->increment('stock', $detail->quantity);
             }
+
+            $correction = $wasSent ? OrderCorrection::record($detail, 'cancel') : null;
 
             $remainingDetails = $order->details()
                 ->where('cooking_status', '!=', 'cancelled')
@@ -95,18 +112,54 @@ class OrdersIndexComponent extends Component
                 ]);
             }
 
-            return true;
+            return [
+                'detail_id' => $detail->id,
+                'order_id' => $order->id,
+                'requires_kitchen' => (bool) $detail->requires_kitchen,
+                'was_sent' => $wasSent,
+                'correction_id' => $correction?->id,
+            ];
         });
 
-        if (!$wasCancelled) {
+        if (!$result) {
             return;
+        }
+
+        if ($result['was_sent']) {
+            $this->dispatchKitchenCorrection($result);
         }
 
         $this->dispatch('swal', [
             'title' => '¡Cancelado!',
-            'text' => 'El producto fue cancelado y el stock fue devuelto.',
+            'text' => $result['was_sent']
+                ? 'El producto fue cancelado, el stock fue devuelto y se envió la corrección.'
+                : 'El producto fue cancelado y el stock fue devuelto.',
             'icon' => 'error'
         ]);
+    }
+
+    private function dispatchKitchenCorrection(array $result): void
+    {
+        $setting = Setting::first();
+        $separateOrders = (bool) ($setting?->separate_orders);
+
+        $this->dispatch('auto-print-kitchen-correction', [[
+            'url' => URL::temporarySignedRoute(
+                'orders.kitchen-print',
+                now()->addMinutes(5),
+                [
+                    'id' => $result['order_id'],
+                    'correction' => true,
+                    'correction_ids' => [$result['correction_id']],
+                    ...($separateOrders
+                        ? ['requires_kitchen' => $result['requires_kitchen']]
+                        : []),
+                ],
+            ),
+            'printer_name' => $separateOrders && $result['requires_kitchen']
+                ? $setting?->kitchen_printer_name
+                : $setting?->printer_name,
+        ]]);
     }
 
     public function render()

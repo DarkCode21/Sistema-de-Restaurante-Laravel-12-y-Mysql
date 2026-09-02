@@ -115,8 +115,8 @@
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                    @forelse($cart as $productId => $item)
-                        <div wire:key="cart-item-{{ $productId }}"
+                    @forelse($cart as $cartKey => $item)
+                        <div wire:key="cart-item-{{ $cartKey }}"
                             class="group relative mb-6 bg-white p-3 pt-5 rounded-2xl border border-slate-100 hover:border-orange-100 transition-all shadow-sm">
 
                             <div class="absolute -top-2.5 left-4 z-10">
@@ -154,28 +154,34 @@
                                     </button>
                                 @endif
 
-                                <button wire:click="removeItem({{ $productId }})" title="Eliminar ítem"
-                                    class="bg-white hover:bg-rose-500 text-slate-400 hover:text-white text-[9px] px-2.5 py-1 transition-all active:scale-95">
-                                    <i class="fas fa-trash-can"></i>
-                                </button>
+                                @if ($item['cooking_status'] !== 'served')
+                                    <button wire:click="removeItem('{{ $cartKey }}')" title="Eliminar ítem"
+                                        class="bg-white hover:bg-rose-500 text-slate-400 hover:text-white text-[9px] px-2.5 py-1 transition-all active:scale-95">
+                                        <i class="fas fa-trash-can"></i>
+                                    </button>
+                                @endif
                             </div>
 
                             <div class="flex items-start gap-4">
                                 <div
                                     class="flex flex-col items-center bg-slate-50 rounded-lg p-1 border border-slate-100">
-                                    <button wire:click="increment({{ $productId }})"
-                                        class="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded-md text-slate-600 hover:bg-orange-600 hover:text-white transition-colors shadow-sm active:scale-90">
-                                        <i class="fas fa-plus text-[10px]"></i>
-                                    </button>
+                                    @if ($item['cooking_status'] !== 'served')
+                                        <button wire:click="increment('{{ $cartKey }}')"
+                                            class="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded-md text-slate-600 hover:bg-orange-600 hover:text-white transition-colors shadow-sm active:scale-90">
+                                            <i class="fas fa-plus text-[10px]"></i>
+                                        </button>
+                                    @endif
 
                                     <span class="py-1 text-xs font-black text-slate-700">
                                         {{ $item['quantity'] }}
                                     </span>
 
-                                    <button wire:click="decrement({{ $productId }})"
-                                        class="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded-md text-slate-600 hover:bg-rose-500 hover:text-white transition-colors shadow-sm active:scale-90">
-                                        <i class="fas fa-minus text-[10px]"></i>
-                                    </button>
+                                    @if ($item['cooking_status'] !== 'served')
+                                        <button wire:click="decrement('{{ $cartKey }}')"
+                                            class="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded-md text-slate-600 hover:bg-rose-500 hover:text-white transition-colors shadow-sm active:scale-90">
+                                            <i class="fas fa-minus text-[10px]"></i>
+                                        </button>
+                                    @endif
                                 </div>
 
                                 <div class="flex-1 min-w-0">
@@ -196,9 +202,10 @@
                                     <div class="relative mt-2">
                                         <i class="fas fa-pen text-[8px] absolute left-2 top-2.5 text-slate-300"></i>
                                         <input type="text" value="{{ $item['notes'] ?? '' }}"
-                                            @if ($item['detail_id']) wire:change="updateNote({{ $item['detail_id'] }}, $event.target.value)"
+                                            @if ($item['cooking_status'] === 'served') disabled
+                                            @elseif ($item['detail_id']) wire:change="updateNote({{ $item['detail_id'] }}, $event.target.value)"
                                             @else
-                                                wire:change="$set('cart.{{ $productId }}.notes', $event.target.value)" @endif
+                                                wire:change="$set('cart.{{ $cartKey }}.notes', $event.target.value)" @endif
                                             placeholder="Añadir nota a la cocina..."
                                             class="w-full pl-6 pr-2 py-1.5 bg-slate-50 border-none rounded-lg text-[10px] focus:ring-1 focus:ring-orange-500 outline-none italic text-slate-500 placeholder:text-slate-300 transition-all">
                                     </div>

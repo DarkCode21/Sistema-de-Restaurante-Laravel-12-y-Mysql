@@ -8,6 +8,7 @@ use App\Models\PaymentMethod;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\On;
+use Illuminate\Support\Facades\DB;
 
 class ExpenseComponent extends Component
 {
@@ -112,39 +113,6 @@ class ExpenseComponent extends Component
 
         $this->validate($rules);
 
-        $isEfectivo = PaymentMethod::find($this->payment_method_id)?->is_efectivo ?? false;
-        $amountDifference = 0;
-
-        if ($isEfectivo) {
-            $register = CashRegister::find($this->cash_register_id);
-            $availableAmount = $register ? $register->current_amount : 0;
-
-            if ($this->expense_id) {
-                $oldExpense = Expense::find($this->expense_id);
-                $amountDifference = $this->amount - $oldExpense->amount;
-                
-                if ($amountDifference > $availableAmount) {
-                    $this->dispatch('swal', [
-                        'title' => 'Saldo Insuficiente',
-                        'text'  => 'El aumento del gasto supera el dinero disponible en caja (' . number_format($availableAmount, 2) . ')',
-                        'icon'  => 'error',
-                    ]);
-                    return;
-                }
-            } else {
-                $amountDifference = $this->amount;
-
-                if ($this->amount > $availableAmount) {
-                    $this->dispatch('swal', [
-                        'title' => 'Saldo Insuficiente',
-                        'text'  => 'El monto del gasto supera el dinero disponible en caja (' . number_format($availableAmount, 2) . ')',
-                        'icon'  => 'error',
-                    ]);
-                    return;
-                }
-            }
-        }
-
         $data = [
             'cash_register_id'  => $this->cash_register_id,
             'payment_method_id' => $this->payment_method_id,
@@ -155,10 +123,85 @@ class ExpenseComponent extends Component
             'expense_date'      => $this->expense_date,
         ];
 
-        Expense::updateOrCreate(['id' => $this->expense_id], $data);
+        try {
+            DB::transaction(function () use ($data) {
+                $oldExpense = $this->expense_id
+                    ? Expense::query()->whereKey($this->expense_id)->lockForUpdate()->first()
+                    : null;
 
-        if ($amountDifference != 0) {
-            $this->updateCashRegisterAmount($this->cash_register_id, $amountDifference);
+                if ($this->expense_id && !$oldExpense) {
+                    throw new \RuntimeException('El gasto ya no está disponible.');
+                }
+
+                $methodIds = collect([$this->payment_method_id, $oldExpense?->payment_method_id])
+                    ->filter()
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
+                $methods = PaymentMethod::query()
+                    ->whereIn('id', $methodIds)
+                    ->get()
+                    ->keyBy('id');
+                $newMethod = $methods->get((int) $this->payment_method_id);
+                $oldMethod = $oldExpense ? $methods->get($oldExpense->payment_method_id) : null;
+
+                if (!$newMethod || ($oldExpense && !$oldMethod)) {
+                    throw new \RuntimeException('El método de pago ya no está disponible.');
+                }
+
+                $registerIds = collect([$this->cash_register_id, $oldExpense?->cash_register_id])
+                    ->filter()
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->sort()
+                    ->values();
+                $registers = CashRegister::query()
+                    ->whereIn('id', $registerIds)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
+
+                if ($registers->count() !== $registerIds->count()
+                    || $registers->contains(fn (CashRegister $register) => $register->status !== 'open')) {
+                    throw new \RuntimeException('No se puede modificar una caja cerrada.');
+                }
+
+                if ($oldExpense && $oldMethod->is_efectivo) {
+                    $oldRegister = $registers->get($oldExpense->cash_register_id);
+                    $oldRegister->current_amount += (float) $oldExpense->amount;
+                    $oldRegister->save();
+                }
+
+                $newRegister = $registers->get((int) $this->cash_register_id);
+                $amount = (float) $this->amount;
+
+                if ($newMethod->is_efectivo) {
+                    if ($amount > $newRegister->current_amount) {
+                        throw new \RuntimeException(
+                            'El monto del gasto supera el dinero disponible en caja ('
+                            . number_format($newRegister->current_amount, 2) . ').'
+                        );
+                    }
+
+                    $newRegister->current_amount -= $amount;
+                    $newRegister->save();
+                }
+
+                if ($oldExpense) {
+                    $oldExpense->update($data);
+                    return;
+                }
+
+                Expense::create($data);
+            });
+        } catch (\RuntimeException $e) {
+            $this->dispatch('swal', [
+                'title' => 'No se pudo guardar',
+                'text' => $e->getMessage(),
+                'icon' => 'error',
+            ]);
+            return;
         }
 
         $this->dispatch('swal', [
@@ -174,7 +217,16 @@ class ExpenseComponent extends Component
     public function edit($id)
     {
         $expense = Expense::findOrFail($id);
-        
+
+        if ($expense->cashRegister?->status !== 'open') {
+            $this->dispatch('swal', [
+                'title' => 'Caja cerrada',
+                'text' => 'Los gastos de una caja cerrada no se pueden modificar.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
         $this->expense_id        = $expense->id;
         $this->cash_register_id  = $expense->cash_register_id;
         $this->payment_method_id = $expense->payment_method_id;
@@ -183,7 +235,6 @@ class ExpenseComponent extends Component
         $this->amount            = $expense->amount;
         $this->expense_date      = $expense->expense_date->format('Y-m-d\TH:i');
 
-        $this->mount(); 
         $this->openModal();
     }
 
@@ -195,14 +246,36 @@ class ExpenseComponent extends Component
     #[On('delete-confirmed')]
     public function destroy($id)
     {
-        $expense = Expense::findOrFail($id);
+        try {
+            DB::transaction(function () use ($id) {
+                $expense = Expense::query()
+                    ->whereKey($id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $register = CashRegister::query()
+                    ->whereKey($expense->cash_register_id)
+                    ->where('status', 'open')
+                    ->lockForUpdate()
+                    ->first();
 
-        $isEfectivo = $expense->paymentMethod?->is_efectivo ?? false;
-        if ($isEfectivo) {
-            $this->updateCashRegisterAmount($expense->cash_register_id, -$expense->amount);
+                if (!$register) {
+                    throw new \RuntimeException('No se puede modificar una caja cerrada.');
+                }
+
+                if ($expense->paymentMethod?->is_efectivo) {
+                    $register->increment('current_amount', $expense->amount);
+                }
+
+                $expense->delete();
+            });
+        } catch (\RuntimeException $e) {
+            $this->dispatch('swal', [
+                'title' => 'No se pudo eliminar',
+                'text' => $e->getMessage(),
+                'icon' => 'error',
+            ]);
+            return;
         }
-
-        $expense->delete();
 
         $this->dispatch('swal', [
             'title' => 'Eliminado',
@@ -211,12 +284,4 @@ class ExpenseComponent extends Component
         ]);
     }
 
-    private function updateCashRegisterAmount($cashRegisterId, $amountDifference)
-    {
-        $register = CashRegister::find($cashRegisterId);
-        if ($register) {
-            $register->current_amount -= $amountDifference;
-            $register->save();
-        }
-    }
 }

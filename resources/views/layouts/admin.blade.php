@@ -111,6 +111,29 @@
                 });
             });
 
+            Livewire.on('auto-print-kitchen-correction', async (printers) => {
+                const jobs = printers[0] ?? [];
+
+                for (const { url, printer_name } of jobs) {
+                    @if ($empresa->direct_printing)
+                        impresionDirecta(url, printer_name);
+                    @else
+                        const result = await Swal.fire({
+                            title: 'Corrección de comanda',
+                            text: 'Abre e imprime la corrección para cocina.',
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonText: 'Abrir corrección',
+                            cancelButtonText: 'Ahora no',
+                        });
+
+                        if (result.isConfirmed) {
+                            abrirVentanaEmergente(url);
+                        }
+                    @endif
+                }
+            });
+
             // Confirmación de eliminación
             Livewire.on('confirm-delete', (valor) => {
                 Swal.fire({

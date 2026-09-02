@@ -31,6 +31,41 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
+            @foreach ($corrections as $correction)
+                <div wire:key="correction-{{ $correction->id }}"
+                    class="border-2 border-rose-300 bg-rose-50 rounded-3xl p-5 shadow-sm">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <span class="inline-flex rounded-full bg-rose-600 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-white">
+                                {{ $correction->requires_kitchen ? 'Cocina' : 'Bar' }} ·
+                                {{ $correction->action === 'cancel' ? 'Anular' : 'Actualizar' }}
+                            </span>
+                            <p class="mt-3 text-lg font-black uppercase text-slate-800">{{ $correction->product_name }}</p>
+                            <p class="text-xs font-bold text-slate-500">
+                                Mesa {{ $correction->table_name ?? $correction->order?->table?->name ?? 'Sin mesa' }} ·
+                                {{ $correction->action === 'cancel' ? 'Anular ' . $correction->quantity : 'Actualizar a ' . $correction->quantity }}
+                            </p>
+                            <p class="mt-2 text-xs font-bold text-rose-700">
+                                NOTA: {{ $correction->notes ?: ($correction->action === 'cancel' ? 'SIN CAMBIOS' : 'SIN NOTA') }}
+                            </p>
+                        </div>
+                        <div class="shrink-0 space-y-2">
+                            @if ($correction->order_id)
+                                <button onclick="abrirVentanaEmergente('{{ $this->correctionPrintUrl($correction) }}')"
+                                    type="button"
+                                    class="w-full rounded-xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wide text-rose-700 transition hover:bg-rose-100 active:scale-95">
+                                    Ver ticket
+                                </button>
+                            @endif
+                            <button wire:click="acknowledgeCorrection({{ $correction->id }})"
+                                class="w-full rounded-xl bg-rose-600 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white transition hover:bg-rose-700 active:scale-95">
+                                Confirmar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            @endforeach
+
             @forelse ($orders as $order)
                 <div wire:key="order-{{ $order->id }}"
                     class="bg-white border border-slate-200 rounded-3xl flex flex-col shadow-sm hover:shadow-md transition-all overflow-hidden relative">
@@ -122,20 +157,22 @@
                     </div>
                 </div>
             @empty
-                <div
-                    class="col-span-1 md:col-span-2 xl:col-span-2 2xl:col-span-3 bg-white border border-dashed border-slate-300 rounded-3xl p-12 text-center">
-                    <div class="flex flex-col items-center justify-center gap-3 max-w-sm mx-auto">
-                        <div
-                            class="h-14 w-14 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center text-2xl shadow-sm">
-                            <i class="fa-solid fa-fire-burner"></i>
+                @if ($corrections->isEmpty())
+                    <div
+                        class="col-span-1 md:col-span-2 xl:col-span-2 2xl:col-span-3 bg-white border border-dashed border-slate-300 rounded-3xl p-12 text-center">
+                        <div class="flex flex-col items-center justify-center gap-3 max-w-sm mx-auto">
+                            <div
+                                class="h-14 w-14 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center text-2xl shadow-sm">
+                                <i class="fa-solid fa-fire-burner"></i>
+                            </div>
+                            <h3 class="text-base font-black text-slate-800 uppercase tracking-tight">No hay pedidos en
+                                cocina</h3>
+                            <p class="text-xs text-slate-400 leading-normal">El monitor de preparación está vacío. Las
+                                comandas enviadas por los meseros que requieran elaboración aparecerán en esta pantalla en
+                                tiempo real.</p>
                         </div>
-                        <h3 class="text-base font-black text-slate-800 uppercase tracking-tight">No hay pedidos en
-                            cocina</h3>
-                        <p class="text-xs text-slate-400 leading-normal">El monitor de preparación está vacío. Las
-                            comandas enviadas por los meseros que requieran elaboración aparecerán en esta pantalla en
-                            tiempo real.</p>
                     </div>
-                </div>
+                @endif
             @endforelse
         </div>
 
@@ -227,6 +264,21 @@
             message.textContent = count === 1
                 ? 'Hay una nueva orden esperando preparación.'
                 : `Hay ${count} nuevas órdenes esperando preparación.`;
+            toast.classList.remove('hidden');
+            ringBell();
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => toast.classList.add('hidden'), 5000);
+        });
+
+        Livewire.on('kitchen-correction-received', () => {
+            const toast = document.querySelector('#kitchen-alert-toast');
+            const message = document.querySelector('[data-kitchen-alert-message]');
+
+            if (!toast || !message) {
+                return;
+            }
+
+            message.textContent = 'Hay una corrección pendiente de revisar.';
             toast.classList.remove('hidden');
             ringBell();
             clearTimeout(toastTimeout);

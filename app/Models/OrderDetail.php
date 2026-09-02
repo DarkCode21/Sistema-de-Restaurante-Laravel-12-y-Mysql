@@ -21,6 +21,7 @@ class OrderDetail extends Model
 
     protected $casts = [
         'requires_kitchen' => 'boolean',
+        'is_printed' => 'boolean',
     ];
 
     public function order()

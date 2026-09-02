@@ -109,6 +109,15 @@
             border-top: 1px dashed #000;
             padding-top: 5px;
         }
+
+        .correction {
+            border: 2px solid #000;
+            font-size: 14px;
+            font-weight: bold;
+            margin: 8px 0;
+            padding: 5px;
+            text-align: center;
+        }
     </style>
 </head>
 
@@ -125,10 +134,19 @@
 
         <div class="divider"></div>
 
+        @if ($isCorrection)
+            <div class="correction">CORRECCIÓN DE COMANDA</div>
+        @endif
+
         <div class="sale-details">
+            @php
+                $correction = $isCorrection ? $corrections->first() : null;
+                $ticketTableName = $correction?->table_name ?? $order->table?->name ?? 'Sin mesa';
+                $ticketDate = $correction?->created_at ?? $order->created_at;
+            @endphp
             <p><strong>TICKET:</strong> #{{ $order->id }}</p>
-            <p><strong>Mesa:</strong> {{ $order->table->name }}</p>
-            <p><strong>FECHA:</strong> {{ $order->created_at->format('d/m/Y H:i') }}</p>
+            <p><strong>Mesa:</strong> {{ $ticketTableName }}</p>
+            <p><strong>FECHA:</strong> {{ $ticketDate->format('d/m/Y H:i') }}</p>
             <p><strong>CLIENTE:</strong> {{ strtoupper($order->customer_name ?? 'Consumidor Final') }}</p>
         </div>
 
@@ -136,30 +154,49 @@
             <thead>
                 <tr>
                     <th style="width: 75%;">DESC.</th>
-                    <th style="width: 25%;" class="text-right">CANT</th>
+                    <th style="width: 25%;" class="text-right">{{ $isCorrection ? 'ACCIÓN' : 'CANT' }}</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach ($order->details as $item)
+                @foreach (($isCorrection ? $corrections : $order->details) as $item)
+                    @php
+                        $name = $isCorrection ? $item->product_name : $item->product->name;
+                        $quantity = $item->quantity;
+                        $notes = $item->notes;
+                    @endphp
                     <tr>
-                        <td style="width: 75%;">{{ $item->product->name }}</td>
-                        <td style="width: 25%;" class="text-right">{{ $item->quantity }}</td>
+                        <td style="width: 75%;">
+                            {{ $name }}
+                            @if ($notes)
+                                <br><small><strong>NOTA:</strong> {{ $notes }}</small>
+                            @elseif ($isCorrection && $item->action !== 'cancel')
+                                <br><small><strong>NOTA:</strong> SIN NOTA</small>
+                            @endif
+                        </td>
+                        <td style="width: 25%;" class="text-right">
+                            @if ($isCorrection)
+                                {{ $item->action === 'cancel' ? 'ANULAR ' . $quantity : 'ACTUALIZAR A ' . $quantity }}
+                            @else
+                                {{ $quantity }}
+                            @endif
+                        </td>
                     </tr>
                 @endforeach
             </tbody>
         </table>
 
-        {{-- SECCIÓN DEL TOTAL --}}
-        <div class="total-container">
-            <span>TOTAL:</span>
-            <span>
-                {{ $empresa->currency_simbol }}
-                {{ number_format($order->details->sum('subtotal'), 2) }}
-            </span>
-        </div>
+        @unless ($isCorrection)
+            <div class="total-container">
+                <span>TOTAL:</span>
+                <span>
+                    {{ $empresa->currency_simbol }}
+                    {{ number_format($order->details->sum('subtotal'), 2) }}
+                </span>
+            </div>
+        @endunless
 
         <div class="footer-msg">
-            <p>¡Gracias por su visita!</p>
+            <p>{{ $isCorrection ? 'Reemplaza la indicación anterior.' : '¡Gracias por su visita!' }}</p>
         </div>
 
     </div>

@@ -1,4 +1,4 @@
-<div class="p-6 bg-[#fcfcfc] min-h-screen font-sans text-slate-900 antialiased">
+<div wire:poll.5s.keep-alive="refreshReadyOrderAlerts" class="p-6 bg-[#fcfcfc] min-h-screen font-sans text-slate-900 antialiased">
     <div class="mx-auto">
 
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -37,6 +37,12 @@
 
             <!-- Buscador -->
             <div class="flex items-center gap-3">
+                <button type="button" wire:ignore data-waiter-bell-toggle
+                    class="shrink-0 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 transition-colors hover:bg-emerald-100"
+                    title="Silenciar campana" aria-label="Campana de avisos" aria-pressed="true">
+                    <i class="fa-solid fa-bell"></i>
+                    <span class="hidden sm:inline" data-waiter-bell-label>Silenciar campana</span>
+                </button>
                 <input wire:model.live="search" type="text" placeholder="Buscar mesa..."
                     class="bg-white border border-slate-200 py-2 px-4 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500/20 transition-all w-64 shadow-sm">
             </div>
@@ -69,7 +75,10 @@
                                 class="group relative bg-white p-3 pt-5 rounded-2xl border border-slate-100 shadow-sm transition-all">
 
                                 <div class="absolute -top-2.5 left-3">
-                                    @if ($detail->cooking_status === 'in_progress')
+                                    @if (!$detail->requires_kitchen && $detail->cooking_status !== 'served')
+                                        <span
+                                            class="bg-blue-100 text-blue-700 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest">Para entregar</span>
+                                    @elseif ($detail->cooking_status === 'in_progress')
                                         <span
                                             class="bg-amber-500 text-white text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest shadow-sm animate-pulse">En
                                             Proceso
@@ -106,14 +115,14 @@
                                         </div>
                                     </div>
 
-                                    @if ($detail->cooking_status === 'ready')
+                                    @if ($detail->cooking_status === 'ready' || !$detail->requires_kitchen)
                                         <div class="shrink-0 flex flex-col items-end gap-2">
                                             <button wire:click="markDetailAsServed({{ $detail->id }})"
-                                                title="Retirar y entregar plato"
-                                                aria-label="Retirar y entregar {{ $detail->product->name }}"
+                                                title="Marcar como entregado"
+                                                aria-label="Marcar como entregado {{ $detail->product->name }}"
                                                 class="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-[10px] font-black uppercase tracking-tight text-emerald-700 transition-all hover:bg-emerald-600 hover:text-white active:scale-95">
                                                 <i class="fa-solid fa-check-double text-xs"></i>
-                                                Retirar y entregar
+                                                Entregar
                                             </button>
                                             <button wire:click="cancelarDetalle({{ $detail->id }})"
                                                 title="Cancelar pedido"
@@ -159,12 +168,13 @@
                             @endif
                         @endcan
 
-                        <button onclick="abrirVentanaEmergente('{{ route('orders.ticket', $order->id) }}')"
-                            type="button"
-                            class="w-full bg-slate-900 hover:bg-orange-600 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
-                            <i class="fa-solid fa-ticket text-[11px]"></i>
-                            Ver Ticket
-                        </button>
+                        @can('ordenes.crear')
+                            <a href="{{ route('orders.create', encrypt($order->table_id)) }}"
+                                class="w-full bg-slate-900 hover:bg-orange-600 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
+                                <i class="fa-solid fa-pen-to-square text-[11px]"></i>
+                                Ver / editar pedido
+                            </a>
+                        @endcan
                     </div>
                 </div>
             @empty
@@ -188,4 +198,18 @@
             {{ $orders->links() }}
         </div>
     </div>
+
+<div id="waiter-ready-toast" class="fixed right-4 top-4 z-[120] hidden max-w-sm rounded-2xl border border-emerald-200 bg-white p-4 shadow-xl" role="status" aria-live="polite">
+    <div class="flex items-start gap-3">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+            <i class="fa-solid fa-bell"></i>
+        </span>
+        <div>
+            <p class="text-sm font-black text-slate-800">Pedido listo para entregar</p>
+            <p class="text-xs font-semibold text-slate-500" data-waiter-ready-message></p>
+        </div>
+    </div>
+</div>
+
+<x-waiter-bell-listeners />
 </div>

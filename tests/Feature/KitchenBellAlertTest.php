@@ -91,9 +91,34 @@ it('removes a served kitchen order from the active dispatch monitor', function (
         ->assertDontSee($detail->product->name);
 });
 
-it('renders kitchen alert controls that require a staff action to enable sound', function () {
+it('renders kitchen alert controls enabled by default', function () {
     Livewire::test(OrdersChefComponent::class)
         ->assertSeeHtml('wire:poll.5s.keep-alive="refreshForAlerts"')
         ->assertSeeHtml('data-alert-bell-toggle')
-        ->assertSeeHtml("Livewire.on('kitchen-order-received'");
+        ->assertSeeHtml('aria-pressed="true"')
+        ->assertSeeHtml("Livewire.on('kitchen-order-received'")
+        ->assertSeeHtml('restaurant-kitchen-bell-enabled');
+});
+
+it('marks every pending kitchen item in an order as ready', function () {
+    $order = createKitchenOrder();
+    $firstDetail = $order->details()->firstOrFail();
+    $secondDetail = OrderDetail::create([
+        'order_id' => $order->id,
+        'product_id' => $firstDetail->product_id,
+        'quantity' => 1,
+        'requires_kitchen' => true,
+        'price' => 25,
+        'subtotal' => 25,
+        'cooking_status' => 'in_progress',
+    ]);
+
+    Livewire::test(OrdersChefComponent::class)
+        ->assertSee('Alistar todo')
+        ->assertDontSee('Ver Ticket')
+        ->call('markOrderAsReady', $order->id)
+        ->assertDispatched('swal');
+
+    expect($firstDetail->refresh()->cooking_status)->toBe('ready')
+        ->and($secondDetail->refresh()->cooking_status)->toBe('ready');
 });

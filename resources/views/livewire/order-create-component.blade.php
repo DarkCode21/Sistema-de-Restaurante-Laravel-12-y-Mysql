@@ -11,10 +11,10 @@
                 </div>
 
                 <button type="button" wire:ignore data-waiter-bell-toggle
-                    class="w-10 sm:w-auto sm:px-4 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                    title="Activar campana" aria-label="Activar campana" aria-pressed="false">
+                    class="w-10 sm:w-auto sm:px-4 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                    title="Silenciar campana" aria-label="Campana de avisos" aria-pressed="true">
                     <i class="fa-solid fa-bell"></i>
-                    <span class="hidden sm:inline" data-waiter-bell-label>Activar campana</span>
+                    <span class="hidden sm:inline" data-waiter-bell-label>Silenciar campana</span>
                 </button>
 
                 <button type="button" onclick="toggleRestaurantFullscreen()" data-fullscreen-toggle
@@ -125,6 +125,9 @@
                                         class="bg-blue-100 text-blue-700 text-[9px] font-black px-2 py-0.5 rounded-full border border-blue-200 uppercase tracking-tighter shadow-sm">No
                                         Guardado
                                     </span>
+                                @elseif(!$item['requires_kitchen'])
+                                    <span
+                                        class="bg-blue-100 text-blue-700 text-[9px] font-black px-2 py-0.5 rounded-full border border-blue-200 uppercase tracking-tighter shadow-sm">Para entregar</span>
                                 @elseif($item['cooking_status'] === 'pending')
                                     <span
                                         class="bg-amber-100 text-amber-700 text-[9px] font-black px-2 py-0.5 rounded-full border border-amber-200 uppercase tracking-tighter animate-pulse shadow-sm">Pendiente</span>
@@ -144,13 +147,13 @@
 
                             <div
                                 class="absolute -top-2.5 right-4 z-10 flex items-center shadow-sm rounded-full overflow-hidden border border-slate-200 bg-white">
-                                @if ($item['detail_id'] && $item['cooking_status'] == 'ready')
+                                @if ($item['detail_id'] && ($item['cooking_status'] === 'ready' || !$item['requires_kitchen']))
                                     <button wire:click="markAsServed({{ $item['detail_id'] }})"
-                                        title="Retirar y entregar plato"
-                                        aria-label="Retirar y entregar {{ $item['name'] }}"
+                                        title="Marcar como entregado"
+                                        aria-label="Marcar como entregado {{ $item['name'] }}"
                                         class="bg-white hover:bg-emerald-600 text-emerald-600 hover:text-white text-[9px] font-black px-3 py-1 transition-all active:scale-95 uppercase tracking-tighter border-r border-slate-100 flex items-center gap-1">
                                         <i class="fas fa-check-double"></i>
-                                        <span>Retirar y entregar</span>
+                                        <span>Entregar</span>
                                     </button>
                                 @endif
 
@@ -458,7 +461,9 @@
 
 
 
-<script>
+    <x-waiter-bell-listeners />
+
+    <script>
     function toggleRestaurantFullscreen() {
         if (document.fullscreenElement) {
             document.exitFullscreen?.();
@@ -484,79 +489,12 @@
         });
     });
 
-    const registerWaiterBellListeners = () => {
-        if (window.__waiterBellListenersRegistered) {
+    const registerOrderPrintingListener = () => {
+        if (window.__orderPrintingListenerRegistered) {
             return;
         }
 
-        window.__waiterBellListenersRegistered = true;
-        let audioContext;
-        let bellEnabled = false;
-        let toastTimeout;
-
-        const ringBell = () => {
-            if (!bellEnabled || !audioContext) {
-                return;
-            }
-
-            [988, 1319].forEach((frequency, index) => {
-                const oscillator = audioContext.createOscillator();
-                const gain = audioContext.createGain();
-                const startAt = audioContext.currentTime + (index * 0.14);
-
-                oscillator.type = 'sine';
-                oscillator.frequency.value = frequency;
-                gain.gain.setValueAtTime(0.0001, startAt);
-                gain.gain.exponentialRampToValueAtTime(0.18, startAt + 0.02);
-                gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.55);
-                oscillator.connect(gain).connect(audioContext.destination);
-                oscillator.start(startAt);
-                oscillator.stop(startAt + 0.56);
-            });
-        };
-
-        document.addEventListener('click', async (event) => {
-            const toggle = event.target.closest('[data-waiter-bell-toggle]');
-
-            if (!toggle) {
-                return;
-            }
-
-            const label = toggle.querySelector('[data-waiter-bell-label]');
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-
-            if (!AudioContext) {
-                label.textContent = 'Sonido no compatible';
-                return;
-            }
-
-            audioContext ??= new AudioContext();
-            await audioContext.resume();
-            bellEnabled = !bellEnabled;
-            toggle.setAttribute('aria-pressed', String(bellEnabled));
-            toggle.title = bellEnabled ? 'Silenciar campana' : 'Activar campana';
-            label.textContent = bellEnabled ? 'Silenciar campana' : 'Activar campana';
-            toggle.classList.toggle('bg-emerald-50', bellEnabled);
-            toggle.classList.toggle('border-emerald-200', bellEnabled);
-            toggle.classList.toggle('text-emerald-700', bellEnabled);
-            ringBell();
-        });
-
-        Livewire.on('order-ready-for-service', (event) => {
-            const toast = document.querySelector('#waiter-ready-toast');
-            const message = document.querySelector('[data-waiter-ready-message]');
-
-            if (!toast || !message) {
-                return;
-            }
-
-            message.textContent = `${event.tableName}: todos los platos de cocina están listos.`;
-            toast.classList.remove('hidden');
-            ringBell();
-            clearTimeout(toastTimeout);
-            toastTimeout = setTimeout(() => toast.classList.add('hidden'), 5000);
-        });
-
+        window.__orderPrintingListenerRegistered = true;
         Livewire.on('auto-print-kitchen', async (printers) => {
 
             let kitchenUrl = '';
@@ -600,9 +538,9 @@
     };
 
     if (window.Livewire) {
-        registerWaiterBellListeners();
+        registerOrderPrintingListener();
     } else {
-        document.addEventListener('livewire:init', registerWaiterBellListeners, { once: true });
+        document.addEventListener('livewire:init', registerOrderPrintingListener, { once: true });
     }
 
     function delay(ms) {

@@ -55,14 +55,31 @@ it('shows pickup only for ready items in the order list', function () {
         'subtotal' => 30,
         'cooking_status' => 'pending',
     ]);
+    $drinkDetail = OrderDetail::create([
+        'order_id' => $order->id,
+        'product_id' => $product->id,
+        'quantity' => 1,
+        'requires_kitchen' => false,
+        'price' => 8,
+        'subtotal' => 8,
+        'cooking_status' => 'pending',
+    ]);
 
     $list = Livewire::test(OrdersIndexComponent::class)
-        ->assertSee('Retirar y entregar')
+        ->assertSee('Para entregar')
+        ->assertSee('Entregar')
         ->call('markDetailAsServed', $readyDetail->id);
 
     expect($readyDetail->refresh()->cooking_status)->toBe('served');
 
-    $list->call('markDetailAsServed', $pendingDetail->id);
+    $list->call('markDetailAsServed', $pendingDetail->id)
+        ->call('markDetailAsServed', $drinkDetail->id);
 
-    expect($pendingDetail->refresh()->cooking_status)->toBe('pending');
+    expect($pendingDetail->refresh()->cooking_status)->toBe('pending')
+        ->and($drinkDetail->refresh()->cooking_status)->toBe('served');
+
+    $pendingDetail->update(['cooking_status' => 'ready']);
+
+    $list->call('refreshReadyOrderAlerts')
+        ->assertDispatched('order-ready-for-service');
 });

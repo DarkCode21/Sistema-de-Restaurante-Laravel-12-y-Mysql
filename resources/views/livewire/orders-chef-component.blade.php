@@ -13,17 +13,17 @@
                         <i class="fa-solid fa-check text-[10px]"></i>
                     </span>
                     <span class="text-[11px] font-bold text-slate-600 uppercase tracking-tight">
-                        Presiona el check para marcar un plato como listo
+                        Presiona el check o alista todo el pedido
                     </span>
                 </div>
             </div>
 
             <div class="flex items-center gap-3">
                 <button type="button" wire:ignore data-alert-bell-toggle
-                    class="shrink-0 inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-700 transition-colors hover:bg-amber-100"
-                    aria-pressed="false">
+                    class="shrink-0 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 transition-colors hover:bg-emerald-100"
+                    aria-pressed="true">
                     <i class="fa-solid fa-bell"></i>
-                    <span data-alert-bell-label>Activar campana</span>
+                    <span data-alert-bell-label>Silenciar campana</span>
                 </button>
                 <input wire:model.live="search" type="text" placeholder="Buscar mesa..."
                     class="min-w-0 flex-1 bg-white border border-slate-200 py-2 px-4 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500/20 transition-all md:w-64 shadow-sm">
@@ -49,14 +49,7 @@
                                 NOTA: {{ $correction->notes ?: ($correction->action === 'cancel' ? 'SIN CAMBIOS' : 'SIN NOTA') }}
                             </p>
                         </div>
-                        <div class="shrink-0 space-y-2">
-                            @if ($correction->order_id)
-                                <button onclick="abrirVentanaEmergente('{{ $this->correctionPrintUrl($correction) }}')"
-                                    type="button"
-                                    class="w-full rounded-xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wide text-rose-700 transition hover:bg-rose-100 active:scale-95">
-                                    Ver ticket
-                                </button>
-                            @endif
+                        <div class="shrink-0">
                             <button wire:click="acknowledgeCorrection({{ $correction->id }})"
                                 class="w-full rounded-xl bg-rose-600 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white transition hover:bg-rose-700 active:scale-95">
                                 Confirmar
@@ -146,13 +139,11 @@
                         </div>
                     </div>
 
-                    <div>
-                        <button
-                            onclick="abrirVentanaEmergente('{{ $this->kitchenPrintUrl($order) }}')"
-                            type="button"
-                            class="w-full bg-slate-900 hover:bg-orange-600 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
-                            <i class="fa-solid fa-ticket text-[11px]"></i>
-                            Ver Ticket
+                    <div class="p-3 pt-0">
+                        <button wire:click="markOrderAsReady({{ $order->id }})" type="button"
+                            class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
+                            <i class="fa-solid fa-check-double text-[11px]"></i>
+                            Alistar todo
                         </button>
                     </div>
                 </div>
@@ -201,12 +192,36 @@
         }
 
         window.__kitchenBellListenersRegistered = true;
+        const storageKey = 'restaurant-kitchen-bell-enabled';
         let audioContext;
-        let bellEnabled = false;
+        let bellEnabled = localStorage.getItem(storageKey) !== 'false';
         let toastTimeout;
 
+        const syncBellToggle = () => {
+            document.querySelectorAll('[data-alert-bell-toggle]').forEach((toggle) => {
+                const label = toggle.querySelector('[data-alert-bell-label]');
+
+                toggle.setAttribute('aria-pressed', String(bellEnabled));
+                label.textContent = bellEnabled ? 'Silenciar campana' : 'Activar campana';
+                toggle.classList.toggle('bg-emerald-50', bellEnabled);
+                toggle.classList.toggle('border-emerald-200', bellEnabled);
+                toggle.classList.toggle('text-emerald-700', bellEnabled);
+            });
+        };
+
+        const activateAudio = async () => {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+
+            if (!AudioContext) {
+                return;
+            }
+
+            audioContext ??= new AudioContext();
+            await audioContext.resume();
+        };
+
         const ringBell = () => {
-            if (!bellEnabled || !audioContext) {
+            if (!bellEnabled || !audioContext || audioContext.state !== 'running') {
                 return;
             }
 
@@ -226,6 +241,12 @@
             });
         };
 
+        document.addEventListener('pointerdown', () => {
+            if (bellEnabled) {
+                activateAudio().catch(() => {});
+            }
+        }, { once: true });
+
         document.addEventListener('click', async (event) => {
             const toggle = event.target.closest('[data-alert-bell-toggle]');
 
@@ -233,24 +254,18 @@
                 return;
             }
 
-            const label = toggle.querySelector('[data-alert-bell-label]');
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            bellEnabled = !bellEnabled;
+            localStorage.setItem(storageKey, String(bellEnabled));
 
-            if (!AudioContext) {
-                label.textContent = 'Sonido no compatible';
-                return;
+            if (bellEnabled) {
+                await activateAudio();
             }
 
-            audioContext ??= new AudioContext();
-            await audioContext.resume();
-            bellEnabled = !bellEnabled;
-            toggle.setAttribute('aria-pressed', String(bellEnabled));
-            label.textContent = bellEnabled ? 'Silenciar campana' : 'Activar campana';
-            toggle.classList.toggle('bg-emerald-50', bellEnabled);
-            toggle.classList.toggle('border-emerald-200', bellEnabled);
-            toggle.classList.toggle('text-emerald-700', bellEnabled);
+            syncBellToggle();
             ringBell();
         });
+
+        syncBellToggle();
 
         Livewire.on('kitchen-order-received', (event) => {
             const toast = document.querySelector('#kitchen-alert-toast');

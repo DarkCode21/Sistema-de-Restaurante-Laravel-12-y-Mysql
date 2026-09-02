@@ -992,7 +992,12 @@ class OrderCreateComponent extends Component
             return OrderDetail::query()
                 ->whereKey($detailId)
                 ->where('order_id', $order->id)
-                ->where('cooking_status', 'ready')
+                ->where(function ($query) {
+                    $query->where('cooking_status', 'ready')
+                        ->orWhere(fn ($query) => $query
+                            ->where('requires_kitchen', false)
+                            ->whereNotIn('cooking_status', ['served', 'cancelled']));
+                })
                 ->lockForUpdate()
                 ->update(['cooking_status' => 'served']) === 1;
         });
@@ -1000,7 +1005,7 @@ class OrderCreateComponent extends Component
         if (!$updated) {
             $this->dispatch('swal', [
                 'title' => 'Aún no disponible',
-                'text' => 'Solo se pueden retirar platos marcados como listos por Cocina.',
+                'text' => 'Solo se pueden entregar productos listos o que no requieren cocina.',
                 'icon' => 'warning',
                 'timer' => 1500,
             ]);
@@ -1016,7 +1021,7 @@ class OrderCreateComponent extends Component
 
         $this->dispatch('swal', [
             'title' => '¡Entregado!',
-            'text' => 'El plato fue retirado y marcado como entregado.',
+            'text' => 'El producto fue marcado como entregado.',
             'icon' => 'success',
             'timer' => 1000
         ]);

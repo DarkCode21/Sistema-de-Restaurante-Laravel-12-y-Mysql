@@ -6,7 +6,6 @@ use App\Models\Order;
 use App\Models\OrderDetail;
 use App\Models\OrderCorrection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\URL;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -76,29 +75,6 @@ class OrdersChefComponent extends Component
             ->all();
     }
 
-    public function kitchenPrintUrl(Order $order): string
-    {
-        return URL::temporarySignedRoute(
-            'orders.kitchen-print',
-            now()->addMinutes(5),
-            ['id' => $order->id, 'requires_kitchen' => true],
-        );
-    }
-
-    public function correctionPrintUrl(OrderCorrection $correction): string
-    {
-        return URL::temporarySignedRoute(
-            'orders.kitchen-print',
-            now()->addMinutes(5),
-            [
-                'id' => $correction->order_id,
-                'correction' => true,
-                'correction_ids' => [$correction->id],
-                'requires_kitchen' => $correction->requires_kitchen,
-            ],
-        );
-    }
-
     public function markDetailAsReady($detailId)
     {
         $updated = OrderDetail::query()
@@ -113,6 +89,25 @@ class OrdersChefComponent extends Component
                 'title' => '¡Listo!',
                 'text' => 'El producto ha sido marcado como listo para servir.',
                 'icon' => 'success'
+            ]);
+        }
+    }
+
+    public function markOrderAsReady($orderId): void
+    {
+        $updated = OrderDetail::query()
+            ->where('order_id', $orderId)
+            ->where('requires_kitchen', true)
+            ->whereIn('cooking_status', ['pending', 'in_progress'])
+            ->whereHas('order', fn ($query) => $query->where('status', 'abierto'))
+            ->update(['cooking_status' => 'ready']);
+
+        if ($updated > 0) {
+            $this->dispatch('swal', [
+                'title' => 'Pedido listo',
+                'text' => 'Todos los platos pendientes fueron marcados como listos para entregar.',
+                'icon' => 'success',
+                'timer' => 1500,
             ]);
         }
     }

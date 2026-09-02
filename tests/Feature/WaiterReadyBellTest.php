@@ -60,7 +60,7 @@ it('loads an existing open order when managing an occupied table', function () {
         ->assertSet('cartTotal', 90.0);
 });
 
-it('shows a ready item to the waiter for pickup and delivery', function () {
+it('allows the waiter to deliver ready kitchen items and drinks', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
     $user = User::factory()->create();
     $table = Table::create([
@@ -96,17 +96,29 @@ it('shows a ready item to the waiter for pickup and delivery', function () {
         'subtotal' => 30,
         'cooking_status' => 'pending',
     ]);
+    $drinkDetail = OrderDetail::create([
+        'order_id' => $order->id,
+        'product_id' => $product->id,
+        'quantity' => 1,
+        'requires_kitchen' => false,
+        'price' => 10,
+        'subtotal' => 10,
+        'cooking_status' => 'pending',
+    ]);
 
     $waiter = Livewire::test(OrderCreateComponent::class, ['table' => $table]);
     $detail->update(['cooking_status' => 'ready']);
 
     $waiter->call('refreshReadyOrderAlert')
         ->assertSet("cart.detail-{$detail->id}.cooking_status", 'ready')
-        ->assertSee('Retirar y entregar')
+        ->assertSee('Para entregar')
         ->call('markAsServed', $detail->id)
-        ->assertSet("cart.detail-{$detail->id}.cooking_status", 'served');
+        ->call('markAsServed', $drinkDetail->id)
+        ->assertSet("cart.detail-{$detail->id}.cooking_status", 'served')
+        ->assertSet("cart.detail-{$drinkDetail->id}.cooking_status", 'served');
 
-    expect($detail->refresh()->cooking_status)->toBe('served');
+    expect($detail->refresh()->cooking_status)->toBe('served')
+        ->and($drinkDetail->refresh()->cooking_status)->toBe('served');
 });
 
 it('alerts the waiter once when every kitchen item in the order is ready', function () {
@@ -169,7 +181,7 @@ it('alerts the waiter once when every kitchen item in the order is ready', funct
         ->assertNotDispatched('order-ready-for-service');
 });
 
-it('renders waiter alert controls that require staff to activate sound', function () {
+it('renders waiter alerts enabled by default', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
     $table = Table::create([
         'name' => 'Mesa control de campana',
@@ -182,5 +194,7 @@ it('renders waiter alert controls that require staff to activate sound', functio
     Livewire::test(OrderCreateComponent::class, ['table' => $table])
         ->assertSeeHtml('wire:poll.5s="refreshReadyOrderAlert"')
         ->assertSeeHtml('data-waiter-bell-toggle')
-        ->assertSeeHtml("Livewire.on('order-ready-for-service'");
+        ->assertSeeHtml('aria-pressed="true"')
+        ->assertSeeHtml("Livewire.on('order-ready-for-service'")
+        ->assertSeeHtml('restaurant-waiter-bell-enabled');
 });

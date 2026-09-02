@@ -18,19 +18,63 @@ class OrdersIndexComponent extends Component
 
     public $search = '';
     public $status = '';
+    public array $knownReadyOrderIds = [];
+
+    public function mount(): void
+    {
+        $this->knownReadyOrderIds = $this->readyOrders()->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    public function refreshReadyOrderAlerts(): void
+    {
+        $readyOrders = $this->readyOrders();
+        $newReadyOrders = $readyOrders->filter(
+            fn (Order $order) => !in_array($order->id, $this->knownReadyOrderIds, true)
+        );
+
+        if ($newReadyOrders->isNotEmpty()) {
+            $this->dispatch(
+                'order-ready-for-service',
+                orderId: $newReadyOrders->pluck('id')->all(),
+                tableName: $newReadyOrders->pluck('table.name')->filter()->join(', '),
+            );
+        }
+
+        $this->knownReadyOrderIds = $readyOrders->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    private function readyOrders()
+    {
+        return Order::query()
+            ->with('table')
+            ->where('status', 'abierto')
+            ->whereHas('details', fn ($query) => $query
+                ->where('requires_kitchen', true)
+                ->where('cooking_status', '!=', 'cancelled'))
+            ->whereDoesntHave('details', fn ($query) => $query
+                ->where('requires_kitchen', true)
+                ->where('cooking_status', '!=', 'cancelled')
+                ->whereNotIn('cooking_status', ['ready', 'served']))
+            ->get();
+    }
 
     public function markDetailAsServed($detailId): void
     {
         $updated = OrderDetail::query()
             ->whereKey($detailId)
-            ->where('cooking_status', 'ready')
+            ->where(function ($query) {
+                $query->where('cooking_status', 'ready')
+                    ->orWhere(fn ($query) => $query
+                        ->where('requires_kitchen', false)
+                        ->whereNotIn('cooking_status', ['served', 'cancelled']));
+            })
             ->whereHas('order', fn ($query) => $query->where('status', 'abierto'))
             ->update(['cooking_status' => 'served']);
 
         if ($updated !== 1) {
             $this->dispatch('swal', [
                 'title' => 'Aún no disponible',
-                'text' => 'Solo se pueden retirar platos marcados como listos por Cocina.',
+                'text' => 'Solo se pueden entregar productos listos o que no requieren cocina.',
                 'icon' => 'warning',
                 'timer' => 1500,
             ]);
@@ -39,7 +83,7 @@ class OrdersIndexComponent extends Component
 
         $this->dispatch('swal', [
             'title' => '¡Entregado!',
-            'text' => 'El plato fue retirado y marcado como entregado.',
+            'text' => 'El producto fue marcado como entregado.',
             'icon' => 'success',
             'timer' => 1000,
         ]);

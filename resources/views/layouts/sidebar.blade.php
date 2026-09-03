@@ -214,10 +214,33 @@
                 </li>
             @endcan
 
+            {{-- REPORTE DE PROMOCIONES --}}
+            @can('ventas.reportes')
+                @php
+                    $isPromotionsReportActive = request()->routeIs('reports.promotions');
+                @endphp
+                <li>
+                    <a href="{{ route('reports.promotions') }}"
+                        class="flex items-center px-3 py-2.5 rounded-xl transition-all duration-200 group
+                        {{ $isPromotionsReportActive ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50 hover:text-orange-600' }}">
+
+                        <i class="fa-solid fa-tags w-5 text-center 
+                            {{ $isPromotionsReportActive ? 'text-orange-600' : 'text-slate-400 group-hover:text-orange-600' }}"></i>
+
+                        <div class="ml-3 transition-all duration-200 overflow-hidden whitespace-nowrap"
+                            :class="sidebarExpanded ? 'opacity-100 visible w-auto' : 'opacity-0 invisible w-0'">
+                            <span class="text-sm {{ $isPromotionsReportActive ? 'font-bold' : 'font-medium' }}">
+                                Impacto de Promociones
+                            </span>
+                        </div>
+                    </a>
+                </li>
+            @endcan
+
             {{-- ALMACÉN (Productos y Categorías) --}}
             @canany(['productos.ver', 'categorias.ver'])
                 @php
-                    $isActiveGestion = request()->routeIs('products.*') || request()->routeIs('categories.*');
+                    $isActiveGestion = request()->routeIs('products.*') || request()->routeIs('categories.*') || request()->routeIs('ingredients.*') || request()->routeIs('promotions.*');
                 @endphp
                 <li x-data="{ open: {{ $isActiveGestion ? 'true' : 'false' }} }">
                     <button @click="if(!sidebarExpanded){ sidebarExpanded=true; open=true } else { open=!open }"
@@ -242,6 +265,20 @@
                                     class="flex items-center py-2 pl-6 text-sm transition-all duration-200 rounded-r-lg
                                 {{ request()->routeIs('products.*') ? 'text-orange-600 font-semibold bg-orange-50/50' : 'text-slate-500 hover:text-orange-600 hover:bg-slate-50' }}">
                                     <i class="fa-solid fa-fish mr-3 text-[10px]"></i> Productos
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{{ route('ingredients.index') }}"
+                                    class="flex items-center py-2 pl-6 text-sm transition-all duration-200 rounded-r-lg
+                                {{ request()->routeIs('ingredients.*') ? 'text-orange-600 font-semibold bg-orange-50/50' : 'text-slate-500 hover:text-orange-600 hover:bg-slate-50' }}">
+                                    <i class="fa-solid fa-wheat-awn mr-3 text-[10px]"></i> Insumos
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{{ route('promotions.index') }}"
+                                    class="flex items-center py-2 pl-6 text-sm transition-all duration-200 rounded-r-lg
+                                {{ request()->routeIs('promotions.*') ? 'text-orange-600 font-semibold bg-orange-50/50' : 'text-slate-500 hover:text-orange-600 hover:bg-slate-50' }}">
+                                    <i class="fa-solid fa-tags mr-3 text-[10px]"></i> Promociones
                                 </a>
                             </li>
                         @endcan

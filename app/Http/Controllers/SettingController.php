@@ -24,6 +24,7 @@ class SettingController extends Controller
             'company_phone' => 'required|string|max:20',
             'company_address' => 'required|string',
             'currency_simbol' => 'required|string',
+            'default_tax_rate' => 'required|numeric|min:0|max:100',
             'tax_id' => 'nullable|string|max:50',
             'timezone' => 'required|string',
             'logo_path' => 'nullable|image|mimes:jpeg,png,jpg,svg|max:2048',

@@ -49,6 +49,11 @@
                                 class="absolute top-2 left-2 bg-white/90 backdrop-blur-sm px-2 py-0.5 rounded text-[9px] font-black text-orange-600 uppercase">
                                 {{ $product->category->name }}
                             </div>
+                            @if ($product->activePromotion)
+                                <div class="absolute top-2 right-2 bg-emerald-600 text-white px-2 py-0.5 rounded text-[9px] font-black uppercase">
+                                    Promo
+                                </div>
+                            @endif
                         </div>
 
                         <div class="p-2.5 sm:p-3">
@@ -56,8 +61,11 @@
                                 {{ $product->name }}
                             </h3>
                             <div class="flex items-center justify-between">
+                                @php
+                                    $breakdown = $product->unitBreakdown(1);
+                                @endphp
                                 <span class="text-sm sm:text-base font-black text-slate-900">
-                                    {{ $empresa->currency_simbol }}{{ number_format($product->price, 2) }}
+                                    {{ $empresa->currency_simbol }}{{ number_format($breakdown['subtotal'], 2) }}
                                 </span>
                                 <button wire:click="addToOrder({{ $product->id }})"
                                     class="bg-orange-600 text-white w-9 h-9 rounded-lg flex items-center justify-center hover:bg-orange-700 active:scale-90 transition-all"
@@ -83,7 +91,13 @@
                     <div class="flex justify-between items-center">
                         <h2 class="text-base font-black uppercase tracking-tighter text-slate-800">Pedido Actual</h2>
                         <span class="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold">
-                            MESA {{ $table->name }}
+                            @if ($orderType === 'dine_in')
+                                MESA {{ $table?->name }}
+                            @elseif ($orderType === 'delivery')
+                                DELIVERY
+                            @else
+                                RETIRO
+                            @endif
                         </span>
                     </div>
                 </div>
@@ -92,19 +106,36 @@
                     <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                         Cliente
                     </label>
-                    <div class="flex items-stretch gap-1">
-                        <div class="relative flex-1">
-                            <i
-                                class="fas fa-user text-[10px] absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                            <input type="text" readonly placeholder="Consumidor Final"
-                                value="{{ $customer_name ?? '' }}"
-                                class="w-full h-9 pl-8 pr-2 bg-white border border-slate-200 rounded-l-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-default border-r-0">
+                    @if ($orderType === 'dine_in')
+                        <div class="flex items-stretch gap-1">
+                            <div class="relative flex-1">
+                                <i class="fas fa-user text-[10px] absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                                <input type="text" readonly placeholder="Consumidor Final" value="{{ $customer_name ?? '' }}"
+                                    class="w-full h-9 pl-8 pr-2 bg-white border border-slate-200 rounded-l-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-default border-r-0">
+                            </div>
+                            <button wire:click="openCustomerModal" type="button"
+                                class="flex items-center justify-center w-9 h-9 bg-orange-50 text-orange-600 rounded-r-lg border border-slate-200 hover:bg-orange-600 hover:text-white transition-all active:scale-95 shadow-sm">
+                                <i class="fas fa-user-plus text-xs"></i>
+                            </button>
                         </div>
-                        <button wire:click="openCustomerModal" type="button"
-                            class="flex items-center justify-center w-9 h-9 bg-orange-50 text-orange-600 rounded-r-lg border border-slate-200 hover:bg-orange-600 hover:text-white transition-all active:scale-95 shadow-sm">
-                            <i class="fas fa-user-plus text-xs"></i>
-                        </button>
-                    </div>
+                    @else
+                        <div class="space-y-2">
+                            <div class="flex items-stretch gap-1">
+                                <input wire:model.live="customer_name" type="text" placeholder="Nombre del cliente{{ $orderType === 'delivery' ? '' : ' (opcional)' }}"
+                                    class="min-w-0 flex-1 h-9 rounded-l-lg border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                                <button wire:click="openCustomerModal" type="button"
+                                    class="flex items-center justify-center w-9 h-9 bg-orange-50 text-orange-600 rounded-r-lg border border-slate-200 hover:bg-orange-600 hover:text-white transition-all">
+                                    <i class="fas fa-user-plus text-xs"></i>
+                                </button>
+                            </div>
+                            <input wire:model.live="customer_phone" type="tel" placeholder="Teléfono{{ $orderType === 'delivery' ? '' : ' (opcional)' }}"
+                                class="w-full h-9 rounded-lg border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                            @if ($orderType === 'delivery')
+                                <textarea wire:model.live="delivery_address" rows="2" placeholder="Dirección de entrega y referencia"
+                                    class="w-full rounded-lg border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700"></textarea>
+                            @endif
+                        </div>
+                    @endif
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
@@ -193,10 +224,21 @@
                                                 </p>
                                             @endif
                                          </div>
-                                        <div class="text-right ml-2">
+                                         <div class="text-right ml-2">
+                                            @php $lineDiscount = ((float) ($item['unit_discount'] ?? 0)) * (int) $item['quantity']; @endphp
+                                            @if ($lineDiscount > 0)
+                                                <p class="text-[10px] line-through text-slate-400">
+                                                    {{ $empresa->currency_simbol }}{{ number_format($item['price'] * $item['quantity'], 2) }}
+                                                </p>
+                                            @endif
                                             <p class="text-sm font-black text-slate-900 tracking-tighter">
                                                 {{ $empresa->currency_simbol }}{{ number_format($item['subtotal'], 2) }}
                                             </p>
+                                            @if ($lineDiscount > 0)
+                                                <p class="text-[10px] font-bold text-emerald-600">
+                                                    -{{ $empresa->currency_simbol }}{{ number_format($lineDiscount, 2) }}
+                                                </p>
+                                            @endif
                                         </div>
                                     </div>
 
@@ -224,10 +266,26 @@
                 </div>
 
                 <div class="p-5 border-t bg-slate-50/30">
+                    @php
+                        $cartDiscount = collect($cart)->sum(fn ($i) => ((float) ($i['unit_discount'] ?? 0)) * (int) ($i['quantity'] ?? 0));
+                        $cartTax = collect($cart)->sum(fn ($i) => (float) ($i['tax'] ?? 0));
+                    @endphp
+                    @if ($cartDiscount > 0)
+                        <div class="flex justify-between mb-1 text-xs">
+                            <span class="font-bold text-slate-500 uppercase">Descuento</span>
+                            <span class="font-bold text-emerald-600">-{{ $empresa->currency_simbol }}{{ number_format($cartDiscount, 2) }}</span>
+                        </div>
+                    @endif
+                    @if ($cartTax > 0)
+                        <div class="flex justify-between mb-1 text-xs">
+                            <span class="font-bold text-slate-500 uppercase">Impuestos</span>
+                            <span class="font-bold text-slate-600">{{ $empresa->currency_simbol }}{{ number_format($cartTax, 2) }}</span>
+                        </div>
+                    @endif
                     <div class="flex justify-between mb-4">
                         <span class="text-sm font-bold text-slate-500 uppercase tracking-tight">Monto en Carrito</span>
                         <span class="font-black text-xl text-slate-900">
-                            {{ $empresa->currency_simbol }}{{ number_format($cartTotal, 2) }}
+                            {{ $empresa->currency_simbol }}{{ number_format($cartTotal + $cartTax, 2) }}
                         </span>
                     </div>
 
@@ -237,7 +295,7 @@
                                 <a href="{{ route('orders.cashier', ['order' => $order->id, 'quick_checkout' => 1]) }}"
                                     class="w-full px-5 py-3 bg-emerald-600 text-white text-xs font-black uppercase tracking-widest rounded-lg hover:bg-emerald-700 shadow-md shadow-emerald-100 active:scale-95 transition-all flex items-center justify-center gap-2">
                                     <i class="fa-solid fa-cash-register text-sm"></i>
-                                    Cobrar y liberar mesa
+                                    {{ $orderType === 'dine_in' ? 'Cobrar y liberar mesa' : 'Cobrar pedido' }}
                                 </a>
                             @endif
                         @endcan

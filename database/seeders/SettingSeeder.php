@@ -21,6 +21,7 @@ class SettingSeeder extends Seeder
                 'company_address' => 'Av. Central 123, Centro',
                 'tax_id'          => 'RUC 20123456789',
                 'currency_simbol' => 'S/',
+                'default_tax_rate' => 18,
                 'timezone'        => 'America/Lima',
                 'logo_path'       => null,
                 'favicon_path'    => null,

@@ -14,7 +14,10 @@ class OrderDetail extends Model
         'quantity',
         'requires_kitchen',
         'price',
+        'discount',
         'tax',
+        'tax_rate',
+        'promotion_id',
         'subtotal',
         'notes',
         'selected_options',
@@ -51,6 +54,25 @@ class OrderDetail extends Model
     public function components()
     {
         return $this->hasMany(self::class, 'parent_detail_id');
+    }
+
+    public function ingredientUsages()
+    {
+        return $this->hasMany(OrderDetailIngredient::class);
+    }
+
+    public function restoreInventory(): void
+    {
+        $usages = $this->ingredientUsages()->lockForUpdate()->get();
+
+        if ($usages->isEmpty()) {
+            Product::query()->whereKey($this->product_id)->lockForUpdate()->first()?->increment('stock', $this->quantity);
+            return;
+        }
+
+        foreach ($usages as $usage) {
+            Ingredient::query()->whereKey($usage->ingredient_id)->lockForUpdate()->first()?->increment('stock', $usage->quantity);
+        }
     }
 
     public function getServiceStatusAttribute(): string

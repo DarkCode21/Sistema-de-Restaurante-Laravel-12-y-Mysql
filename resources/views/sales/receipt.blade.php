@@ -90,6 +90,16 @@
 
     <div class="total-container">
         <table>
+            @if ($sale->manual_discount > 0)
+                <tr>
+                    <td class="text-right">DESCUENTO:</td>
+                    <td class="text-right">-{{ $empresa->currency_simbol }}{{ number_format($sale->manual_discount, 2) }}</td>
+                </tr>
+                <tr>
+                    <td class="text-right"><small>{{ strtoupper($sale->manual_discount_reason) }}</small></td>
+                    <td></td>
+                </tr>
+            @endif
             <tr>
                 <td class="text-right">PAGO CON:</td>
                 <td class="text-right">{{ $empresa->currency_simbol }}{{ number_format($sale->paid_amount, 2) }}</td>

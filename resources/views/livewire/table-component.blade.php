@@ -13,6 +13,16 @@
             </div>
 
             <div class="flex items-center gap-2">
+                @can('ordenes.crear')
+                    <a href="{{ route('orders.new', 'pickup') }}"
+                        class="inline-flex items-center justify-center rounded-lg bg-slate-100 px-2 sm:px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:bg-slate-200">
+                        Retiro
+                    </a>
+                    <a href="{{ route('orders.new', 'delivery') }}"
+                        class="inline-flex items-center justify-center rounded-lg bg-violet-600 px-2 sm:px-3 py-2.5 text-[10px] font-black uppercase tracking-wide text-white hover:bg-violet-700">
+                        Delivery
+                    </a>
+                @endcan
                 <button type="button" onclick="toggleRestaurantFullscreen()" data-fullscreen-toggle
                     class="w-10 h-10 inline-flex items-center justify-center rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
                     title="Pantalla completa" aria-label="Pantalla completa">

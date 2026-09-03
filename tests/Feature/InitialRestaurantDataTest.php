@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Product;
+use App\Models\Setting;
 use App\Models\Table;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Support\Facades\Storage;
@@ -10,7 +11,8 @@ it('seeds tables and positive stock for every product', function () {
 
     expect(Table::count())->toBe(8)
         ->and(Product::whereNull('stock')->count())->toBe(0)
-        ->and(Product::where('stock', '<=', 0)->count())->toBe(0);
+        ->and(Product::where('stock', '<=', 0)->count())->toBe(0)
+        ->and((float) Setting::firstOrFail()->default_tax_rate)->toBe(18.0);
 });
 
 it('ships the default product image through the public storage disk', function () {

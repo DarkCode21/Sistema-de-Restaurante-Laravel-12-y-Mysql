@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Transaction;
 use App\Models\Category;
 use App\Models\PaymentMethod;
+use App\Models\Promotion;
+use App\Models\SaleDetail;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -109,5 +111,56 @@ class ReportController extends Controller
             'start_date',
             'end_date'
         ));
+    }
+
+    public function promotions(Request $request)
+    {
+        $start_date = $request->start_date ?? now()->startOfMonth()->format('Y-m-d');
+        $end_date = $request->end_date ?? now()->endOfMonth()->format('Y-m-d');
+
+        $rows = SaleDetail::query()
+            ->selectRaw('promotion_id, COUNT(*) as times_applied, SUM(quantity) as qty, SUM(discount) as total_discount, SUM(subtotal) as net_revenue, SUM(subtotal + tax) as gross_revenue')
+            ->whereNotNull('promotion_id')
+            ->whereHas('sale', function ($q) use ($start_date, $end_date) {
+                $q->whereDate('paid_at', '>=', $start_date)
+                    ->whereDate('paid_at', '<=', $end_date);
+            })
+            ->groupBy('promotion_id')
+            ->get()
+            ->keyBy('promotion_id');
+
+        $promotions = Promotion::with('product')
+            ->whereIn('id', $rows->keys())
+            ->orderBy('name')
+            ->get()
+            ->map(function (Promotion $promotion) use ($rows) {
+                $row = $rows->get($promotion->id);
+                return [
+                    'promotion' => $promotion,
+                    'times_applied' => (int) ($row->times_applied ?? 0),
+                    'qty' => (int) ($row->qty ?? 0),
+                    'total_discount' => (float) ($row->total_discount ?? 0),
+                    'net_revenue' => (float) ($row->net_revenue ?? 0),
+                    'gross_revenue' => (float) ($row->gross_revenue ?? 0),
+                ];
+            })
+            ->sortByDesc('total_discount')
+            ->values();
+
+        $totals = [
+            'times_applied' => $promotions->sum('times_applied'),
+            'qty' => $promotions->sum('qty'),
+            'total_discount' => $promotions->sum('total_discount'),
+            'net_revenue' => $promotions->sum('net_revenue'),
+            'gross_revenue' => $promotions->sum('gross_revenue'),
+        ];
+
+        if ($request->action === 'pdf') {
+            $pdf = Pdf::loadView('reports.pdf_promotions', compact('promotions', 'totals', 'start_date', 'end_date'))
+                ->setPaper('a4', 'portrait');
+            return $pdf->download("Reporte_Promociones_{$start_date}_a_{$end_date}.pdf");
+        }
+
+        return view('reports.promotions', compact('promotions', 'totals', 'start_date', 'end_date'));
     }
 }

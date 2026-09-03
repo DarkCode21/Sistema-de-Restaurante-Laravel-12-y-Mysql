@@ -141,13 +141,16 @@
         <div class="sale-details">
             @php
                 $correction = $isCorrection ? $corrections->first() : null;
-                $ticketTableName = $correction?->table_name ?? $order->table?->name ?? 'Sin mesa';
+                $ticketService = $correction?->table_name ?? $order->service_label;
                 $ticketDate = $correction?->created_at ?? $order->created_at;
             @endphp
             <p><strong>TICKET:</strong> #{{ $order->id }}</p>
-            <p><strong>Mesa:</strong> {{ $ticketTableName }}</p>
+            <p><strong>PEDIDO:</strong> {{ $ticketService }}</p>
             <p><strong>FECHA:</strong> {{ $ticketDate->format('d/m/Y H:i') }}</p>
             <p><strong>CLIENTE:</strong> {{ strtoupper($order->customer_name ?? 'Consumidor Final') }}</p>
+            @if ($order->order_type === 'delivery' && $order->delivery_address)
+                <p><strong>DIRECCIÓN:</strong> {{ strtoupper($order->delivery_address) }}</p>
+            @endif
         </div>
 
         <table>
@@ -190,11 +193,28 @@
         </table>
 
         @unless ($isCorrection)
+            @php
+                $subtotalSum = (float) $order->details->sum('subtotal');
+                $discountSum = (float) $order->details->sum('discount');
+                $taxSum = (float) $order->details->sum('tax');
+            @endphp
+            @if ($discountSum > 0)
+                <div class="total-container" style="font-weight:normal;">
+                    <span>DESCUENTO:</span>
+                    <span>-{{ $empresa->currency_simbol }} {{ number_format($discountSum, 2) }}</span>
+                </div>
+            @endif
+            @if ($taxSum > 0)
+                <div class="total-container" style="font-weight:normal;">
+                    <span>IMPUESTO:</span>
+                    <span>{{ $empresa->currency_simbol }} {{ number_format($taxSum, 2) }}</span>
+                </div>
+            @endif
             <div class="total-container">
                 <span>TOTAL:</span>
                 <span>
                     {{ $empresa->currency_simbol }}
-                    {{ number_format($order->details->sum('subtotal'), 2) }}
+                    {{ number_format($subtotalSum + $taxSum, 2) }}
                 </span>
             </div>
         @endunless

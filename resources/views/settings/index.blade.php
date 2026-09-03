@@ -84,6 +84,19 @@
 
                                 <div class="space-y-1">
                                     <label
+                                        class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">IGV
+                                        por defecto (%)</label>
+                                    <input type="number" name="default_tax_rate" min="0" max="100" step="0.01"
+                                        value="{{ old('default_tax_rate', $setting->default_tax_rate ?: 18) }}"
+                                        class="w-full rounded-xl @error('default_tax_rate') border-red-500 focus:ring-red-500/10 focus:border-red-500 @else border-slate-200 focus:ring-orange-500/10 focus:border-orange-500 @enderror transition-all font-medium">
+                                    <p class="text-[10px] text-slate-400 mt-1 ml-1">Se aplica al crear productos nuevos. Puedes ajustar la tasa por producto si es exonerado.</p>
+                                    @error('default_tax_rate')
+                                        <p class="text-xs text-red-500 font-semibold mt-1 ml-1">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <div class="space-y-1">
+                                    <label
                                         class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tax
                                         ID / RUC</label>
                                     <input type="text" name="tax_id" value="{{ old('tax_id', $setting->tax_id) }}"

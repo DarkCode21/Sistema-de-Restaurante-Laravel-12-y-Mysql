@@ -5,6 +5,8 @@ namespace App\Livewire;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\PreparationStation;
+use App\Models\Ingredient;
+use App\Models\Setting;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Component;
@@ -21,6 +23,7 @@ class ProductComponent extends Component
     public $category_id = '';
     public $name = '';
     public $price = '';
+    public $tax_rate = 0;
     public $stock = '';
     public $status = 1;
     public $requires_kitchen = 0;
@@ -28,6 +31,7 @@ class ProductComponent extends Component
     public $preparation_station_id = '';
     public array $option_groups = [];
     public array $components = [];
+    public array $recipe_ingredients = [];
     public $image, $old_image;
 
     public $search = '';
@@ -40,7 +44,7 @@ class ProductComponent extends Component
 
     public function render()
     {
-        $products = Product::with('category')
+        $products = Product::with('category')->withCount('recipeIngredients')
             ->where('name', 'like', '%' . $this->search . '%')
             ->orderByDesc('status')
             ->latest()
@@ -53,8 +57,9 @@ class ProductComponent extends Component
             ->when($this->product_id, fn ($query) => $query->whereKeyNot($this->product_id))
             ->orderBy('name')
             ->get(['id', 'name', 'preparation_station_id']);
+        $ingredients = Ingredient::orderBy('name')->get(['id', 'name', 'unit', 'stock']);
 
-        return view('livewire.product-component', compact('products', 'categories', 'stations', 'componentProducts'));
+        return view('livewire.product-component', compact('products', 'categories', 'stations', 'componentProducts', 'ingredients'));
     }
 
     public function create()
@@ -75,8 +80,9 @@ class ProductComponent extends Component
 
     private function resetInputFields()
     {
-        $this->reset(['product_id', 'category_id', 'name', 'requires_kitchen', 'is_combo', 'preparation_station_id', 'option_groups', 'components', 'price', 'stock', 'status', 'image', 'old_image']);
+        $this->reset(['product_id', 'category_id', 'name', 'requires_kitchen', 'is_combo', 'preparation_station_id', 'option_groups', 'components', 'recipe_ingredients', 'price', 'tax_rate', 'stock', 'status', 'image', 'old_image']);
         $this->status = 1;
+        $this->tax_rate = (float) (Setting::first()?->default_tax_rate ?? 0);
         $this->resetValidation();
     }
 
@@ -86,6 +92,7 @@ class ProductComponent extends Component
             'category_id' => 'required|exists:categories,id',
             'name' => ['required', 'min:2', Rule::unique('products', 'name')->ignore($this->product_id)],
             'price' => 'required|numeric',
+            'tax_rate' => 'required|numeric|min:0|max:100',
             'stock' => $this->is_combo ? 'nullable|integer' : 'required|integer',
             'status' => 'required|boolean',
             'requires_kitchen' => 'required|boolean',
@@ -94,6 +101,9 @@ class ProductComponent extends Component
             'components' => $this->is_combo ? 'required|array|min:1' : 'array',
             'components.*.product_id' => $this->is_combo ? 'required|distinct|exists:products,id' : 'nullable',
             'components.*.quantity' => $this->is_combo ? 'required|integer|min:1' : 'nullable',
+            'recipe_ingredients' => $this->is_combo ? 'array' : 'array',
+            'recipe_ingredients.*.ingredient_id' => $this->is_combo ? 'nullable' : 'required|distinct|exists:ingredients,id',
+            'recipe_ingredients.*.quantity' => $this->is_combo ? 'nullable' : 'required|numeric|min:0.001',
             'option_groups' => 'array',
             'option_groups.*.name' => 'required_unless:is_combo,1|string|max:100',
             'option_groups.*.required' => 'boolean',
@@ -115,6 +125,7 @@ class ProductComponent extends Component
             'category_id' => $this->category_id,
             'name'        => $this->name,
             'price'       => $this->price,
+            'tax_rate'    => $this->tax_rate,
             'stock'       => $this->is_combo ? 0 : $this->stock,
             'status'      => $this->status,
             'is_combo' => $this->is_combo,
@@ -148,6 +159,11 @@ class ProductComponent extends Component
                     $component['product_id'] => ['quantity' => $component['quantity']],
                 ])->all()
                 : []);
+            $product->recipeIngredients()->sync($this->is_combo
+                ? []
+                : collect($this->recipe_ingredients)->mapWithKeys(fn ($ingredient) => [
+                    $ingredient['ingredient_id'] => ['quantity' => $ingredient['quantity']],
+                ])->all());
         });
 
         $this->dispatch('swal', [
@@ -167,6 +183,7 @@ class ProductComponent extends Component
         $this->category_id = $product->category_id;
         $this->name        = $product->name;
         $this->price       = $product->price;
+        $this->tax_rate    = $product->tax_rate;
         $this->stock       = $product->stock;
         $this->status      = $product->status;
         $this->requires_kitchen = $product->requires_kitchen;
@@ -184,6 +201,9 @@ class ProductComponent extends Component
         $this->old_image   = $product->image;
         $this->components = $product->components()->get()
             ->map(fn ($component) => ['product_id' => $component->id, 'quantity' => $component->pivot->quantity])
+            ->all();
+        $this->recipe_ingredients = $product->recipeIngredients()->get()
+            ->map(fn ($ingredient) => ['ingredient_id' => $ingredient->id, 'quantity' => $ingredient->pivot->quantity])
             ->all();
 
         $this->openModal();
@@ -220,10 +240,39 @@ class ProductComponent extends Component
         $this->components[] = ['product_id' => '', 'quantity' => 1];
     }
 
+    public function updatedIsCombo($isCombo): void
+    {
+        if ($isCombo) {
+            $this->requires_kitchen = false;
+            $this->preparation_station_id = '';
+            $this->option_groups = [];
+            $this->recipe_ingredients = [];
+
+            if ($this->components === []) {
+                $this->addComponent();
+            }
+
+            return;
+        }
+
+        $this->components = [];
+    }
+
     public function removeComponent(int $componentIndex): void
     {
         unset($this->components[$componentIndex]);
         $this->components = array_values($this->components);
+    }
+
+    public function addRecipeIngredient(): void
+    {
+        $this->recipe_ingredients[] = ['ingredient_id' => '', 'quantity' => 1];
+    }
+
+    public function removeRecipeIngredient(int $ingredientIndex): void
+    {
+        unset($this->recipe_ingredients[$ingredientIndex]);
+        $this->recipe_ingredients = array_values($this->recipe_ingredients);
     }
 
     public function deleteConfirm($id)

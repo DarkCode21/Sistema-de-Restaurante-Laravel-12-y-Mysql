@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use Livewire\Component;
 use App\Models\Product;
+use App\Models\Ingredient;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\Sale;
@@ -22,6 +23,7 @@ class OrderCreateComponent extends Component
     use WithPagination;
 
     public $table;
+    public string $orderType = 'dine_in';
     public $search = '';
     public $category_id = '';
     public $order;
@@ -43,6 +45,8 @@ class OrderCreateComponent extends Component
     public $searchCustomer = '';
     public $customer_id;
     public $customer_name = 'Consumidor Final';
+    public $customer_phone = '';
+    public $delivery_address = '';
     public $direct_printing = false;
     public $printer_name;
     public $separate_orders = false;
@@ -59,7 +63,7 @@ class OrderCreateComponent extends Component
 
     protected $updatesQueryString = ['searchCustomer', 'search'];
 
-    public function mount($table)
+    public function mount($table = null, $order = null, $orderType = 'dine_in')
     {
         $this->table = $table;
 
@@ -69,10 +73,24 @@ class OrderCreateComponent extends Component
         $this->kitchen_printer_name = $setting->kitchen_printer_name;
         $this->separate_orders = $setting->separate_orders;
 
-        $this->order = Order::with(['details.product', 'details.components.product'])
-            ->where('table_id', $this->table->id)
-            ->where('status', 'abierto')
-            ->first();
+        if ($order) {
+            $this->order = Order::with(['details.product', 'details.components.product'])
+                ->whereKey($order->id)
+                ->where('status', 'abierto')
+                ->firstOrFail();
+            $this->table = $this->order->table;
+            $this->orderType = $this->order->order_type;
+        } else {
+            abort_unless(in_array($orderType, Order::ORDER_TYPES, true), 404);
+            abort_if($orderType === 'dine_in' && !$this->table, 404);
+            $this->orderType = $this->table ? 'dine_in' : $orderType;
+            $this->order = $this->table
+                ? Order::with(['details.product', 'details.components.product'])
+                    ->where('table_id', $this->table->id)
+                    ->where('status', 'abierto')
+                    ->first()
+                : null;
+        }
         $this->hydrateCartFromOrder();
         $this->orderWasReadyForService = $this->orderIsReadyForService($this->order);
 
@@ -140,8 +158,12 @@ class OrderCreateComponent extends Component
                     'product_id' => $detail->product_id,
                     'name' => $detail->product->name,
                     'price' => (float) $detail->price,
+                    'unit_discount' => $detail->quantity > 0 ? round((float) $detail->discount / $detail->quantity, 2) : 0.0,
+                    'tax_rate' => (float) $detail->tax_rate,
+                    'promotion_id' => $detail->promotion_id,
                     'quantity' => $detail->quantity,
                     'subtotal' => (float) $detail->subtotal,
+                    'tax' => (float) $detail->tax,
                     'notes' => $detail->notes,
                     'selected_options' => $detail->selected_options ?? [],
                     'option_key' => collect($detail->selected_options ?? [])->pluck('value_id')->sort()->join('-'),
@@ -162,6 +184,8 @@ class OrderCreateComponent extends Component
             ->all();
         $this->customer_id = $this->order->customer_id;
         $this->customer_name = $this->order->customer_name ?: 'Consumidor Final';
+        $this->customer_phone = $this->order->customer_phone ?? '';
+        $this->delivery_address = $this->order->delivery_address ?? '';
         $this->calculateCartTotal();
     }
 
@@ -258,6 +282,10 @@ class OrderCreateComponent extends Component
 
     private function hasStockForOneMore(array $item, Product $product): bool
     {
+        if ($product->recipeIngredients()->exists()) {
+            return true;
+        }
+
         if ($item['detail_id']) {
             return $product->stock > 0;
         }
@@ -273,6 +301,9 @@ class OrderCreateComponent extends Component
     {
         foreach ($components as $component) {
             $product = Product::find($component['product_id']);
+            if ($product?->recipeIngredients()->exists()) {
+                continue;
+            }
             $draftQuantity = collect($this->cart)
                 ->filter(fn ($item) => !$item['detail_id'] && ($item['is_combo'] ?? false))
                 ->sum(fn ($item) => collect($item['components'] ?? [])
@@ -291,6 +322,9 @@ class OrderCreateComponent extends Component
     {
         foreach ($item['components'] as $component) {
             $product = Product::find($component['product_id']);
+            if ($product?->recipeIngredients()->exists()) {
+                continue;
+            }
             $draftQuantity = collect($this->cart)
                 ->filter(fn ($cartItem) => !$cartItem['detail_id'] && ($cartItem['is_combo'] ?? false))
                 ->sum(fn ($cartItem) => collect($cartItem['components'] ?? [])
@@ -303,6 +337,70 @@ class OrderCreateComponent extends Component
         }
 
         return true;
+    }
+
+    private function usesRecipe(Product $product): bool
+    {
+        return $product->recipeIngredients()->exists();
+    }
+
+    private function consumeProductInventory(OrderDetail $detail, Product $product, int $quantity): void
+    {
+        $recipe = $product->recipeIngredients()->orderBy('ingredients.id')->get();
+
+        if ($recipe->isEmpty()) {
+            if ($product->stock < $quantity) {
+                throw new \RuntimeException("Stock insuficiente para {$product->name}");
+            }
+
+            $product->decrement('stock', $quantity);
+            return;
+        }
+
+        foreach ($recipe as $recipeIngredient) {
+            $required = (float) $recipeIngredient->pivot->quantity * $quantity;
+            $ingredient = Ingredient::query()->whereKey($recipeIngredient->id)->lockForUpdate()->first();
+
+            if (!$ingredient || (float) $ingredient->stock < $required) {
+                throw new \RuntimeException("Stock insuficiente para {$recipeIngredient->name}");
+            }
+
+            $ingredient->decrement('stock', $required);
+            $detail->ingredientUsages()->create([
+                'ingredient_id' => $ingredient->id,
+                'quantity' => $required,
+            ]);
+        }
+    }
+
+    private function adjustDetailInventory(OrderDetail $detail, Product $product, int $difference): void
+    {
+        if ($difference === 0) {
+            return;
+        }
+
+        $usages = $detail->ingredientUsages()->lockForUpdate()->get();
+
+        if ($usages->isEmpty()) {
+            if ($difference > 0) {
+                $this->consumeProductInventory($detail, $product, $difference);
+            } else {
+                $product->increment('stock', -$difference);
+            }
+            return;
+        }
+
+        foreach ($usages as $usage) {
+            $amount = (float) $usage->quantity / $detail->quantity * abs($difference);
+            $ingredient = Ingredient::query()->whereKey($usage->ingredient_id)->lockForUpdate()->first();
+
+            if (!$ingredient || ($difference > 0 && (float) $ingredient->stock < $amount)) {
+                throw new \RuntimeException('Stock insuficiente para un insumo de la receta.');
+            }
+
+            $difference > 0 ? $ingredient->decrement('stock', $amount) : $ingredient->increment('stock', $amount);
+            $usage->update(['quantity' => (float) $usage->quantity + ($difference > 0 ? $amount : -$amount)]);
+        }
     }
 
     public function updatingSearch()
@@ -334,12 +432,14 @@ class OrderCreateComponent extends Component
         if ($client) {
             $this->customer_id = $client->id;
             $this->customer_name = $client->name;
+            $this->customer_phone = $client->phone ?? '';
 
             if ($this->order) {
                 try {
                     $this->order->update([
                         'customer_id' => $client->id,
                         'customer_name' => $client->name,
+                        'customer_phone' => $client->phone,
                     ]);
 
                     $this->dispatch('swal', [
@@ -390,7 +490,7 @@ class OrderCreateComponent extends Component
 
     public function addToOrder($productId)
     {
-        $product = Product::with(['optionGroups.values', 'components.optionGroups.values'])->find($productId);
+        $product = Product::with(['optionGroups.values', 'components.optionGroups.values', 'activePromotion'])->find($productId);
 
         if (!$product || ($this->order && $this->order->status !== 'abierto')) {
             return;
@@ -450,7 +550,7 @@ class OrderCreateComponent extends Component
 
     public function confirmProductOptions(): void
     {
-        $product = Product::with(['optionGroups.values', 'components.optionGroups.values'])->find($this->configuringProduct['id'] ?? null);
+        $product = Product::with(['optionGroups.values', 'components.optionGroups.values', 'activePromotion'])->find($this->configuringProduct['id'] ?? null);
 
         if (!$product || !$product->status) {
             $this->isOpenProductOptions = false;
@@ -525,9 +625,8 @@ class OrderCreateComponent extends Component
             }
 
             $this->cart[$cartKey]['quantity']++;
-            $this->cart[$cartKey]['subtotal'] =
-                $this->cart[$cartKey]['quantity'] * $this->cart[$cartKey]['price'];
-        } elseif (($product->is_combo && !$this->hasStockForCombo($components)) || (!$product->is_combo && $product->stock <= collect($this->cart)
+            $this->recalcCartLine($cartKey);
+        } elseif (($product->is_combo && !$this->hasStockForCombo($components)) || (!$product->is_combo && !$product->recipeIngredients()->exists() && $product->stock <= collect($this->cart)
             ->filter(fn ($item) => (int) $item['product_id'] === $product->id && !$item['detail_id'])
             ->sum('quantity'))) {
             $this->dispatch('swal', [
@@ -537,14 +636,19 @@ class OrderCreateComponent extends Component
             ]);
             return;
         } else {
-            $price = (float) $product->price + collect($selectedOptions)->sum('price_adjustment');
+            $priceAdjustment = (float) collect($selectedOptions)->sum('price_adjustment');
+            $breakdown = $product->unitBreakdown(1, $priceAdjustment);
             $this->cart[$this->draftCartKey($product->id, $optionKey)] = [
                 'detail_id' => null,
                 'product_id' => $product->id,
                 'name' => $product->name,
-                'price' => $price,
+                'price' => $breakdown['price'],
+                'unit_discount' => $breakdown['discount'],
+                'tax_rate' => $breakdown['tax_rate'],
+                'promotion_id' => $breakdown['promotion_id'],
                 'quantity' => 1,
-                'subtotal' => $price,
+                'subtotal' => $breakdown['subtotal'],
+                'tax' => $breakdown['tax'],
                 'selected_options' => $selectedOptions,
                 'option_key' => $optionKey,
                 'preparation_station_id' => $product->preparation_station_id,
@@ -600,8 +704,7 @@ class OrderCreateComponent extends Component
         }
 
         $this->cart[$cartKey]['quantity']++;
-        $this->cart[$cartKey]['subtotal'] =
-            $this->cart[$cartKey]['quantity'] * $this->cart[$cartKey]['price'];
+        $this->recalcCartLine($cartKey);
 
         $this->calculateCartTotal();
     }
@@ -623,7 +726,7 @@ class OrderCreateComponent extends Component
 
         if ($this->cart[$cartKey]['quantity'] > 1) {
             $this->cart[$cartKey]['quantity']--;
-            $this->cart[$cartKey]['subtotal'] = $this->cart[$cartKey]['quantity'] * $this->cart[$cartKey]['price'];
+            $this->recalcCartLine($cartKey);
             $this->calculateCartTotal();
             return;
         }
@@ -675,8 +778,7 @@ class OrderCreateComponent extends Component
                         }
 
                         foreach ($components as $component) {
-                            $product = Product::query()->whereKey($component->product_id)->lockForUpdate()->first();
-                            $product?->increment('stock', $component->quantity);
+                            $component->restoreInventory();
 
                             if ($component->is_printed || $component->cooking_status !== 'pending') {
                                 $component->update(['cooking_status' => 'cancelled']);
@@ -689,14 +791,7 @@ class OrderCreateComponent extends Component
                     } else {
                         $wasSent = $detail->is_printed || $detail->cooking_status !== 'pending';
 
-                        $product = Product::query()
-                            ->whereKey($detail->product_id)
-                            ->lockForUpdate()
-                            ->first();
-
-                        if ($product) {
-                            $product->increment('stock', $detail->quantity);
-                        }
+                        $detail->restoreInventory();
 
                         if ($wasSent) {
                             $detail->update(['cooking_status' => 'cancelled']);
@@ -733,7 +828,7 @@ class OrderCreateComponent extends Component
                         $order->table?->update(['status' => 'libre']);
                         $orderClosed = true;
                     } else {
-                        $total = $remainingDetails->sum('subtotal');
+                        $total = (float) $remainingDetails->sum('subtotal') + (float) $remainingDetails->sum('tax');
                         $order->update([
                             'total' => $total,
                             'amount_pending' => $total,
@@ -875,6 +970,14 @@ class OrderCreateComponent extends Component
         $this->cartTotal = collect($this->cart)->sum('subtotal');
     }
 
+    private function recalcCartLine(string $cartKey): void
+    {
+        $item = &$this->cart[$cartKey];
+        $net = (float) $item['price'] - (float) ($item['unit_discount'] ?? 0);
+        $item['subtotal'] = round($net * (int) $item['quantity'], 2);
+        $item['tax'] = round($item['subtotal'] * (float) ($item['tax_rate'] ?? 0) / 100, 2);
+    }
+
     private function checkEmptyOrder()
     {
         if (!empty($this->cart) || !$this->order) {
@@ -1009,6 +1112,19 @@ class OrderCreateComponent extends Component
             return;
         }
 
+        if (!in_array($this->orderType, Order::ORDER_TYPES, true)
+            || ($this->orderType === 'dine_in' && !$this->table)
+            || ($this->orderType === 'delivery' && (trim($this->customer_name) === '' || $this->customer_name === 'Consumidor Final' || trim($this->customer_phone) === '' || trim($this->delivery_address) === ''))) {
+            $this->dispatch('swal', [
+                'title' => 'Faltan datos del pedido',
+                'text' => $this->orderType === 'delivery'
+                    ? 'Delivery requiere cliente, teléfono y dirección.'
+                    : 'El tipo de pedido no es válido.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
         $existingOrderId = $this->order?->id;
 
         try {
@@ -1023,17 +1139,27 @@ class OrderCreateComponent extends Component
                     if (!$order) {
                         return ['order' => null, 'correction_ids' => []];
                     }
+
+                    $order->update([
+                        'customer_id' => $this->customer_id,
+                        'customer_name' => $this->customer_name ?: 'Consumidor Final',
+                        'customer_phone' => $this->customer_phone ?: null,
+                        'delivery_address' => $this->orderType === 'delivery' ? trim($this->delivery_address) : null,
+                    ]);
                 } else {
                     $order = Order::create([
-                        'table_id' => $this->table->id,
+                        'table_id' => $this->orderType === 'dine_in' ? $this->table?->id : null,
                         'customer_id' => $this->customer_id ?? null,
                         'user_id' => auth()->id(),
+                        'order_type' => $this->orderType,
                         'customer_name' => $this->customer_name ?? 'Consumidor Final',
+                        'customer_phone' => $this->customer_phone ?: null,
+                        'delivery_address' => $this->orderType === 'delivery' ? trim($this->delivery_address) : null,
                         'status' => 'abierto',
                         'total' => 0,
                         'amount_pending' => 0,
                     ]);
-                    $this->table->update(['status' => 'ocupada']);
+                    $this->table?->update(['status' => 'ocupada']);
                 }
 
                 $correctionIds = [];
@@ -1105,16 +1231,20 @@ class OrderCreateComponent extends Component
                         }
 
                         if ($wasSent && $difference > 0) {
-                            if ($product->stock < $difference) {
-                                throw new \RuntimeException("Stock insuficiente para {$product->name}");
-                            }
-
-                            $product->decrement('stock', $difference);
-                            $order->details()->create([
+                            $unitDiscount = (float) ($item['unit_discount'] ?? 0);
+                            $unitNet = (float) $detail->price - $unitDiscount;
+                            $newSubtotal = round($unitNet * $difference, 2);
+                            $newTaxRate = (float) ($item['tax_rate'] ?? $detail->tax_rate);
+                            $newTax = round($newSubtotal * $newTaxRate / 100, 2);
+                            $newDetail = $order->details()->create([
                                 'product_id' => $product->id,
                                 'quantity' => $difference,
                                 'price' => $detail->price,
-                                'subtotal' => $detail->price * $difference,
+                                'discount' => round($unitDiscount * $difference, 2),
+                                'tax_rate' => $newTaxRate,
+                                'tax' => $newTax,
+                                'promotion_id' => $item['promotion_id'] ?? $detail->promotion_id,
+                                'subtotal' => $newSubtotal,
                                 'notes' => $newNotes,
                                 'selected_options' => $detail->selected_options,
                                 'preparation_station_id' => $detail->preparation_station_id,
@@ -1122,6 +1252,7 @@ class OrderCreateComponent extends Component
                                 'cooking_status' => 'pending',
                                 'is_printed' => false,
                             ]);
+                            $this->consumeProductInventory($newDetail, $product, $difference);
 
                             if ($detail->notes !== $newNotes) {
                                 $detail->update(['notes' => $newNotes]);
@@ -1131,22 +1262,22 @@ class OrderCreateComponent extends Component
                             continue;
                         }
 
-                        if ($difference > 0 && $product->stock < $difference) {
-                            throw new \RuntimeException("Stock insuficiente para {$product->name}");
-                        }
+                        $this->adjustDetailInventory($detail, $product, $difference);
 
-                        if ($difference !== 0) {
-                            if ($difference > 0) {
-                                $product->decrement('stock', $difference);
-                            } else {
-                                $product->increment('stock', -$difference);
-                            }
-                        }
+                        $unitDiscount = (float) ($item['unit_discount'] ?? ($detail->quantity > 0 ? round((float) $detail->discount / $detail->quantity, 2) : 0));
+                        $taxRate = (float) ($item['tax_rate'] ?? $detail->tax_rate);
+                        $unitNet = (float) $detail->price - $unitDiscount;
+                        $newSubtotal = round($unitNet * $quantity, 2);
+                        $newTax = round($newSubtotal * $taxRate / 100, 2);
 
                         $changed = $difference !== 0 || $detail->notes !== $newNotes;
                         $detail->update([
                             'quantity' => $quantity,
-                            'subtotal' => $detail->price * $quantity,
+                            'discount' => round($unitDiscount * $quantity, 2),
+                            'tax_rate' => $taxRate,
+                            'tax' => $newTax,
+                            'promotion_id' => $item['promotion_id'] ?? $detail->promotion_id,
+                            'subtotal' => $newSubtotal,
                             'notes' => $newNotes,
                         ]);
 
@@ -1183,7 +1314,11 @@ class OrderCreateComponent extends Component
                             'product_id' => $product->id,
                             'quantity' => $quantity,
                             'price' => $item['price'],
-                            'subtotal' => $item['price'] * $quantity,
+                            'discount' => round((float) ($item['unit_discount'] ?? 0) * $quantity, 2),
+                            'tax_rate' => (float) ($item['tax_rate'] ?? 0),
+                            'tax' => (float) ($item['tax'] ?? 0),
+                            'promotion_id' => $item['promotion_id'] ?? null,
+                            'subtotal' => (float) ($item['subtotal'] ?? ($item['price'] * $quantity)),
                             'notes' => $notes ?: null,
                             'selected_options' => $item['selected_options'] ?? [],
                             'requires_kitchen' => false,
@@ -1195,12 +1330,11 @@ class OrderCreateComponent extends Component
                             $componentProduct = $componentProducts->get($component['product_id']);
                             $componentQuantity = (int) $component['quantity'] * $quantity;
 
-                            if (!$componentProduct || $componentProduct->is_combo || $componentProduct->stock < $componentQuantity) {
+                            if (!$componentProduct || $componentProduct->is_combo) {
                                 throw new \RuntimeException("Stock insuficiente para un componente de {$product->name}");
                             }
 
-                            $componentProduct->decrement('stock', $componentQuantity);
-                            $order->details()->create([
+                            $componentDetail = $order->details()->create([
                                 'parent_detail_id' => $parent->id,
                                 'product_id' => $componentProduct->id,
                                 'quantity' => $componentQuantity,
@@ -1213,21 +1347,21 @@ class OrderCreateComponent extends Component
                                 'cooking_status' => 'pending',
                                 'is_printed' => false,
                             ]);
+                            $this->consumeProductInventory($componentDetail, $componentProduct, $componentQuantity);
                         }
 
                         continue;
                     }
 
-                    if ($product->stock < $quantity) {
-                        throw new \RuntimeException("Stock insuficiente para {$product->name}");
-                    }
-
-                    $product->decrement('stock', $quantity);
-                    $order->details()->create([
+                    $detail = $order->details()->create([
                         'product_id' => $product->id,
                         'quantity' => $quantity,
                         'price' => $item['price'],
-                        'subtotal' => $item['price'] * $quantity,
+                        'discount' => round((float) ($item['unit_discount'] ?? 0) * $quantity, 2),
+                        'tax_rate' => (float) ($item['tax_rate'] ?? 0),
+                        'tax' => (float) ($item['tax'] ?? 0),
+                        'promotion_id' => $item['promotion_id'] ?? null,
+                        'subtotal' => (float) ($item['subtotal'] ?? ($item['price'] * $quantity)),
                         'notes' => $notes ?: null,
                         'selected_options' => $item['selected_options'] ?? [],
                         'preparation_station_id' => $item['preparation_station_id'] ?? $product->preparation_station_id,
@@ -1235,11 +1369,16 @@ class OrderCreateComponent extends Component
                         'cooking_status' => 'pending',
                         'is_printed' => false,
                     ]);
+                    $this->consumeProductInventory($detail, $product, $quantity);
                 }
 
-                $newTotal = $order->details()
+                $newGross = $order->details()
                     ->where('cooking_status', '!=', 'cancelled')
                     ->sum('subtotal');
+                $newTax = $order->details()
+                    ->where('cooking_status', '!=', 'cancelled')
+                    ->sum('tax');
+                $newTotal = $newGross + $newTax;
 
                 $order->update([
                     'total' => $newTotal,
@@ -1387,7 +1526,7 @@ class OrderCreateComponent extends Component
             ->orderBy('name', 'asc')
             ->paginate(5, ['*'], 'pageCustomers');
 
-        $products = Product::with('optionGroups.values')->where('status', 1)
+        $products = Product::with(['optionGroups.values', 'activePromotion'])->where('status', 1)
             ->when($this->category_id, fn($q) => $q->where('category_id', $this->category_id))
             ->when($this->search, fn($q) => $q->where('name', 'like', '%' . $this->search . '%'))
             ->paginate(12, ['*'], 'pageProducts');

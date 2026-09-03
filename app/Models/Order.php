@@ -6,12 +6,16 @@ use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
 {
+    public const ORDER_TYPES = ['dine_in', 'pickup', 'delivery'];
+
     protected $fillable = [
         'table_id',
         'customer_id',
         'user_id',
+        'order_type',
         'customer_name',
         'customer_phone',
+        'delivery_address',
         'status',
         'total',
         'amount_pending'
@@ -66,5 +70,21 @@ class Order extends Model
     public function sale()
     {
         return $this->hasOne(Sale::class);
+    }
+
+    public function getOrderTypeLabelAttribute(): string
+    {
+        return match ($this->order_type) {
+            'pickup' => 'Retiro',
+            'delivery' => 'Delivery',
+            default => 'Salón',
+        };
+    }
+
+    public function getServiceLabelAttribute(): string
+    {
+        return $this->order_type === 'dine_in'
+            ? 'Mesa ' . ($this->table?->name ?? 'sin mesa')
+            : $this->order_type_label;
     }
 }

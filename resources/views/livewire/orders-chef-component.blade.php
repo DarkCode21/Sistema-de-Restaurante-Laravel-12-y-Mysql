@@ -41,7 +41,7 @@
                                 </p>
                             @endif
                             <p class="text-xs font-bold text-slate-500">
-                                Mesa {{ $correction->table_name ?? $correction->order?->table?->name ?? 'Sin mesa' }} ·
+                                {{ $correction->table_name ?? $correction->order?->service_label ?? 'Pedido' }} ·
                                 {{ $correction->action === 'cancel' ? 'Anular ' . $correction->quantity : 'Actualizar a ' . $correction->quantity }}
                             </p>
                             <p class="mt-2 text-xs font-bold text-rose-700">
@@ -64,8 +64,8 @@
 
                     <div class="p-4 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
                         <div>
-                            <span class="text-[10px] font-black text-orange-600 uppercase tracking-tighter">Mesa</span>
-                            <h2 class="text-2xl font-black leading-none text-slate-800">{{ $order->table->name }}</h2>
+                            <span class="text-[10px] font-black text-orange-600 uppercase tracking-tighter">{{ $order->order_type_label }}</span>
+                            <h2 class="text-2xl font-black leading-none text-slate-800">{{ $order->service_label }}</h2>
                         </div>
                         <div class="text-right">
                             <span

@@ -38,6 +38,8 @@ class OrdersCashierComponent extends Component
     public $subtotal = 0;
     public $tax = 0;
     public $tip = 0;
+    public $manual_discount = 0;
+    public $manual_discount_reason = '';
 
     public function mount()
     {
@@ -71,7 +73,7 @@ class OrdersCashierComponent extends Component
             $this->dispatch(
                 'order-ready-for-checkout',
                 orderId: $newReadyOrders->pluck('id')->all(),
-                tableName: $newReadyOrders->pluck('table.name')->filter()->join(', '),
+                tableName: $newReadyOrders->pluck('service_label')->join(', '),
             );
         }
 
@@ -110,7 +112,21 @@ class OrdersCashierComponent extends Component
 
     public function getTotalProperty()
     {
-        return (float)$this->subtotal + (float)$this->tax + (float)$this->tip;
+        return (float) $this->subtotal - $this->manualDiscount + (float) $this->tax - $this->manualDiscountTax + (float) $this->tip;
+    }
+
+    public function getManualDiscountProperty(): float
+    {
+        return min(max((float) $this->manual_discount, 0), (float) $this->subtotal);
+    }
+
+    public function getManualDiscountTaxProperty(): float
+    {
+        if ((float) $this->subtotal <= 0) {
+            return 0;
+        }
+
+        return round((float) $this->tax * ($this->manualDiscount / (float) $this->subtotal), 2);
     }
 
     private function calculateTotals($details)
@@ -121,6 +137,11 @@ class OrdersCashierComponent extends Component
     }
 
     public function updatedTip()
+    {
+        $this->paymentAmount = $this->total;
+    }
+
+    public function updatedManualDiscount()
     {
         $this->paymentAmount = $this->total;
     }
@@ -243,7 +264,9 @@ class OrdersCashierComponent extends Component
         $this->payments = [];
         $this->selectedMethod = null;
         $this->tip = 0;
-        $this->paymentAmount = $this->subtotal + $this->tax;
+        $this->manual_discount = 0;
+        $this->manual_discount_reason = '';
+        $this->paymentAmount = $this->total;
         $this->showPaymentModal = true;
     }
 
@@ -323,10 +346,40 @@ class OrdersCashierComponent extends Component
             return;
         }
 
+        if (!is_numeric($this->manual_discount) || (float) $this->manual_discount < 0 || (float) $this->manual_discount > (float) $this->subtotal) {
+            $this->dispatch('swal', [
+                'title' => 'Descuento no válido',
+                'text' => 'El descuento manual no puede superar el subtotal.',
+                'icon' => 'error',
+            ]);
+            return;
+        }
+
+        $manualDiscount = round((float) $this->manual_discount, 2);
+        $manualDiscountReason = trim((string) $this->manual_discount_reason);
+
+        if ($manualDiscount > 0 && $manualDiscountReason === '') {
+            $this->dispatch('swal', [
+                'title' => 'Falta el motivo',
+                'text' => 'Indica el motivo del descuento manual.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
+        if (mb_strlen($manualDiscountReason) > 255) {
+            $this->dispatch('swal', [
+                'title' => 'Motivo muy largo',
+                'text' => 'El motivo del descuento no puede superar 255 caracteres.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
         $orderId = $this->order->id;
 
         try {
-            $sale = DB::transaction(function () use ($detailIds, $orderId, $paymentRows) {
+            $sale = DB::transaction(function () use ($detailIds, $orderId, $paymentRows, $manualDiscount, $manualDiscountReason) {
                 $order = Order::query()
                     ->with('table')
                     ->whereKey($orderId)
@@ -374,8 +427,18 @@ class OrdersCashierComponent extends Component
                     throw new \RuntimeException('Uno de los métodos de pago no está disponible.');
                 }
 
-                $subtotal = (float) $details->sum('subtotal');
-                $tax = (float) $details->sum('tax');
+                $rawSubtotal = (float) $details->sum('subtotal');
+                $rawTax = (float) $details->sum('tax');
+
+                if ($manualDiscount > $rawSubtotal) {
+                    throw new \RuntimeException('El descuento manual supera el subtotal disponible.');
+                }
+
+                $manualDiscountTax = $rawSubtotal > 0
+                    ? round($rawTax * ($manualDiscount / $rawSubtotal), 2)
+                    : 0;
+                $subtotal = round($rawSubtotal - $manualDiscount, 2);
+                $tax = round($rawTax - $manualDiscountTax, 2);
                 $tip = (float) $this->tip;
                 $total = $subtotal + $tax + $tip;
                 $paid = (float) $paymentRows->sum('amount');
@@ -393,6 +456,9 @@ class OrdersCashierComponent extends Component
                     'cash_register_id' => $cashRegister->id,
                     'subtotal' => $subtotal,
                     'tax' => $tax,
+                    'manual_discount' => $manualDiscount,
+                    'manual_discount_reason' => $manualDiscount > 0 ? $manualDiscountReason : null,
+                    'manual_discount_by' => $manualDiscount > 0 ? auth()->id() : null,
                     'tip' => $tip,
                     'total' => $total,
                     'paid_amount' => $paid,
@@ -405,8 +471,11 @@ class OrdersCashierComponent extends Component
                         'product_id' => $detail->product_id,
                         'quantity' => $detail->quantity,
                         'price' => $detail->price,
-                        'subtotal' => $detail->subtotal,
+                        'discount' => (float) $detail->discount,
+                        'tax_rate' => (float) $detail->tax_rate,
                         'tax' => $detail->tax,
+                        'promotion_id' => $detail->promotion_id,
+                        'subtotal' => $detail->subtotal,
                         'notes' => $detail->notes,
                         'selected_options' => $detail->selected_options,
                     ]);
@@ -497,6 +566,8 @@ class OrdersCashierComponent extends Component
             $this->reset([
                 'boxId',
                 'tip',
+                'manual_discount',
+                'manual_discount_reason',
                 'payments',
                 'selectedMethod',
                 'detailsToPay',
@@ -540,8 +611,12 @@ class OrdersCashierComponent extends Component
         ])
         ->where('status', 'abierto')
         ->when($this->status, fn($q) => $q->where('status', $this->status))
-        ->whereHas('table', function ($q) {
-            $q->where('name', 'like', '%' . $this->search . '%');
+        ->when($this->search, function ($query) {
+            $query->where(function ($query) {
+                $query->where('customer_name', 'like', '%' . $this->search . '%')
+                    ->orWhere('delivery_address', 'like', '%' . $this->search . '%')
+                    ->orWhereHas('table', fn ($table) => $table->where('name', 'like', '%' . $this->search . '%'));
+            });
         })
         ->orderBy('created_at', 'desc')
         ->paginate(12);

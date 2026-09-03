@@ -50,10 +50,28 @@ class OrderController extends Controller
         try {
             $decryptedId = decrypt($tableId);
             $table = Table::findOrFail($decryptedId);
-            return view('orders.create', compact('table'));
+            return view('orders.create', ['table' => $table, 'orderType' => 'dine_in']);
         } catch (DecryptException $e) {
             abort(404, 'El identificador de la mesa no es válido.');
         }
+    }
+
+    public function createDirect(string $type)
+    {
+        abort_unless(in_array($type, ['pickup', 'delivery'], true), 404);
+
+        return view('orders.create', ['table' => null, 'orderType' => $type]);
+    }
+
+    public function manage(Order $order)
+    {
+        abort_unless($order->status === 'abierto', 404);
+
+        return view('orders.create', [
+            'table' => $order->table,
+            'order' => $order,
+            'orderType' => $order->order_type,
+        ]);
     }
 
     public function print(Request $request, $id)

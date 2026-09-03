@@ -164,6 +164,46 @@
                         class="text-emerald-600 font-bold mr-0.5">{{ $empresa->currency_simbol }}</span>{{ number_format($propinasHoy, 2) }}
                 </h3>
             </div>
+
+            <div class="ultra-card p-6 rounded-2xl">
+                <div class="flex items-center justify-between mb-5">
+                    <div
+                        class="icon-container w-12 h-12 bg-gradient-to-br from-sky-500 to-blue-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-sky-500/20 transition-all duration-300">
+                        <i class="fa-solid fa-percent text-xl"></i>
+                    </div>
+                    @php
+                        $variacionImpuestos = $impuestosAyer > 0 ? (($impuestosHoy - $impuestosAyer) / $impuestosAyer) * 100 : 100;
+                    @endphp
+                    <span
+                        class="text-[11px] font-black {{ $variacionImpuestos >= 0 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200' }} px-2.5 py-1 rounded-lg border shadow-sm">
+                        {{ $variacionImpuestos >= 0 ? '▲' : '▼' }} {{ number_format(abs($variacionImpuestos), 1) }}%
+                    </span>
+                </div>
+                <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">IGV Recaudado</p>
+                <h3 class="text-2xl font-black text-slate-800 tracking-tight mt-1">
+                    <span class="text-sky-600 font-bold mr-0.5">{{ $empresa->currency_simbol }}</span>{{ number_format($impuestosHoy, 2) }}
+                </h3>
+            </div>
+
+            <div class="ultra-card p-6 rounded-2xl">
+                <div class="flex items-center justify-between mb-5">
+                    <div
+                        class="icon-container w-12 h-12 bg-gradient-to-br from-rose-400 to-pink-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-rose-500/20 transition-all duration-300">
+                        <i class="fa-solid fa-tags text-xl"></i>
+                    </div>
+                    @php
+                        $variacionDescuentos = $descuentosAyer > 0 ? (($descuentosHoy - $descuentosAyer) / $descuentosAyer) * 100 : 100;
+                    @endphp
+                    <span
+                        class="text-[11px] font-black {{ $variacionDescuentos <= 0 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200' }} px-2.5 py-1 rounded-lg border shadow-sm">
+                        {{ $variacionDescuentos <= 0 ? '▼' : '▲' }} {{ number_format(abs($variacionDescuentos), 1) }}%
+                    </span>
+                </div>
+                <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Descuentos Otorgados</p>
+                <h3 class="text-2xl font-black text-slate-800 tracking-tight mt-1">
+                    <span class="text-rose-600 font-bold mr-0.5">{{ $empresa->currency_simbol }}</span>{{ number_format($descuentosHoy, 2) }}
+                </h3>
+            </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">

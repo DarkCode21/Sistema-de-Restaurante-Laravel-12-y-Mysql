@@ -198,8 +198,12 @@ class OrdersChefComponent extends Component
         ])->where('status', 'abierto') 
         ->when($this->status, fn($q) => $q->where('status', $this->status))
         
-        ->whereHas('table', function ($q) {
-            $q->where('name', 'like', '%' . $this->search . '%');
+        ->when($this->search, function ($query) {
+            $query->where(function ($query) {
+                $query->where('customer_name', 'like', '%' . $this->search . '%')
+                    ->orWhere('delivery_address', 'like', '%' . $this->search . '%')
+                    ->orWhereHas('table', fn ($table) => $table->where('name', 'like', '%' . $this->search . '%'));
+            });
         })
         
         ->whereHas('details', function ($q) use ($stationIds) {

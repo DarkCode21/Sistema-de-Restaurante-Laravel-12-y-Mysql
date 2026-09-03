@@ -37,7 +37,13 @@
 
             <!-- Buscador -->
             <div class="flex items-center gap-3">
-                <input wire:model.live="search" type="text" placeholder="Buscar mesa..."
+                @can('ordenes.crear')
+                    <a href="{{ route('orders.new', 'pickup') }}"
+                        class="rounded-xl bg-slate-100 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:bg-slate-200">Retiro</a>
+                    <a href="{{ route('orders.new', 'delivery') }}"
+                        class="rounded-xl bg-violet-600 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white hover:bg-violet-700">Delivery</a>
+                @endcan
+                <input wire:model.live="search" type="text" placeholder="Buscar pedido..."
                     class="bg-white border border-slate-200 py-2 px-4 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500/20 transition-all w-64 shadow-sm">
             </div>
         </div>
@@ -49,8 +55,8 @@
 
                     <div class="p-4 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
                         <div>
-                            <span class="text-[10px] font-black text-orange-600 uppercase tracking-tighter">Mesa</span>
-                            <h2 class="text-2xl font-black leading-none text-slate-800">{{ $order->table->name }}</h2>
+                            <span class="text-[10px] font-black text-orange-600 uppercase tracking-tighter">{{ $order->order_type_label }}</span>
+                            <h2 class="text-2xl font-black leading-none text-slate-800">{{ $order->service_label }}</h2>
                         </div>
                         <div class="text-right">
                             <span
@@ -169,13 +175,13 @@
                                 <a href="{{ route('orders.cashier', ['order' => $order->id, 'quick_checkout' => 1]) }}"
                                     class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
                                     <i class="fa-solid fa-cash-register text-[11px]"></i>
-                                    Cobrar y liberar mesa
+                                    {{ $order->order_type === 'dine_in' ? 'Cobrar y liberar mesa' : 'Cobrar pedido' }}
                                 </a>
                             @endif
                         @endcan
 
                         @can('ordenes.crear')
-                            <a href="{{ route('orders.create', encrypt($order->table_id)) }}"
+                            <a href="{{ route('orders.manage', $order) }}"
                                 class="w-full bg-slate-900 hover:bg-orange-600 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
                                 <i class="fa-solid fa-pen-to-square text-[11px]"></i>
                                 Ver / editar pedido

@@ -11,6 +11,9 @@ class Sale extends Model
         'cash_register_id',
         'subtotal',
         'tax',
+        'manual_discount',
+        'manual_discount_reason',
+        'manual_discount_by',
         'tip',
         'total',
         'paid_amount',
@@ -36,5 +39,10 @@ class Sale extends Model
     public function details()
     {
         return $this->hasMany(SaleDetail::class);
+    }
+
+    public function manualDiscountAuthor()
+    {
+        return $this->belongsTo(User::class, 'manual_discount_by');
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\UserController;
@@ -48,6 +49,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/boxes/{id}/close', [CashRegisterController::class, 'close'])->name('boxes.close')->middleware('can:cajas.cerrar');
 
     Route::get('/tables', [CrudController::class, 'table'])->name('tables.index')->middleware('can:mesas.ver');
+    Route::get('/ingredients', [CrudController::class, 'ingredient'])->name('ingredients.index')->middleware('can:productos.ver');
+    Route::get('/promotions', [CrudController::class, 'promotion'])->name('promotions.index')->middleware('can:productos.ver');
 
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index')->middleware('can:ordenes.ver');
 
@@ -65,4 +68,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/reports/sales/pdf', [SaleController::class, 'salesPdf'])->name('sales.report.pdf')->middleware('can:ventas.reportes');
     Route::get('/reports/sales/excel', [SaleController::class, 'salesExcel'])->name('sales.report.excel')->middleware('can:ventas.reportes');
 
-    Route::get('/profile', [ProfileControl
+    Route::get('/reports/promotions', [ReportController::class, 'promotions'])->name('reports.promotions')->middleware('can:ventas.reportes');
+
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+require __DIR__ . '/auth.php';

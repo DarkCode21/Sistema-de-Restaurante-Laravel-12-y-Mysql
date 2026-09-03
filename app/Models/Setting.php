@@ -14,6 +14,7 @@ class Setting extends Model
         'company_address',
         'tax_id',
         'currency_simbol',
+        'default_tax_rate',
         'logo_path',
         'favicon_path',
         'timezone',
@@ -30,6 +31,7 @@ class Setting extends Model
         'direct_printing' => 'boolean',
         'separate_orders' => 'boolean',
         'alert_sounds_enabled' => 'boolean',
+        'default_tax_rate' => 'decimal:2',
     ];
 
     /**

@@ -6,7 +6,6 @@ use Livewire\Component;
 use App\Models\Order;
 use App\Models\OrderDetail;
 use App\Models\OrderCorrection;
-use App\Models\Product;
 use App\Models\Setting;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
@@ -36,7 +35,7 @@ class OrdersIndexComponent extends Component
             $this->dispatch(
                 'order-ready-for-service',
                 orderId: $newReadyOrders->pluck('id')->all(),
-                tableName: $newReadyOrders->pluck('table.name')->filter()->join(', '),
+                tableName: $newReadyOrders->pluck('service_label')->join(', '),
             );
         }
 
@@ -150,14 +149,7 @@ class OrdersIndexComponent extends Component
                 'cooking_status' => 'cancelled'
             ]);
 
-            $product = Product::query()
-                ->whereKey($detail->product_id)
-                ->lockForUpdate()
-                ->first();
-
-            if ($product) {
-                $product->increment('stock', $detail->quantity);
-            }
+            $detail->restoreInventory();
 
             $correction = $wasSent ? OrderCorrection::record($detail, 'cancel') : null;
 
@@ -173,7 +165,7 @@ class OrdersIndexComponent extends Component
                 ]);
                 $order->table?->update(['status' => 'libre']);
             } else {
-                $newTotal = $remainingDetails->sum('subtotal');
+                $newTotal = (float) $remainingDetails->sum('subtotal') + (float) $remainingDetails->sum('tax');
                 $order->update([
                     'total' => $newTotal,
                     'amount_pending' => $newTotal,
@@ -243,8 +235,12 @@ class OrdersIndexComponent extends Component
         ])
             ->where('status', 'abierto')
             ->when($this->status, fn($q) => $q->where('status', $this->status))
-            ->whereHas('table', function ($q) {
-                $q->where('name', 'like', '%' . $this->search . '%');
+            ->when($this->search, function ($query) {
+                $query->where(function ($query) {
+                    $query->where('customer_name', 'like', '%' . $this->search . '%')
+                        ->orWhere('delivery_address', 'like', '%' . $this->search . '%')
+                        ->orWhereHas('table', fn ($table) => $table->where('name', 'like', '%' . $this->search . '%'));
+                });
             })
             ->whereHas('details', function ($q) {
                 $q->where('cooking_status', '!=', 'cancelled');

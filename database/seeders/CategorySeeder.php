@@ -2,28 +2,26 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
 use App\Models\Category;
+use Illuminate\Database\Seeder;
 
 class CategorySeeder extends Seeder
 {
     public function run(): void
     {
         $categories = [
-            ['name' => 'Ceviches'],
-            ['name' => 'Tiraditos'],
-            ['name' => 'Entradas'],
-            ['name' => 'Chicharrones'],
-            ['name' => 'Arroces'],
-            ['name' => 'Parihuelas'],
-            ['name' => 'Platos criollos'],
-            ['name' => 'Bebidas'],
+            ['name' => 'Parrillas de Pollo'],
+            ['name' => 'Parrillas de Carne'],
+            ['name' => 'Parrillas de Cerdo'],
+            ['name' => 'Guarniciones'],
+            ['name' => 'Ensaladas'],
+            ['name' => 'Bebidas Sin Alcohol'],
             ['name' => 'Cervezas'],
-            ['name' => 'Postres'],
+            ['name' => 'Salsas y Extras'],
         ];
 
         foreach ($categories as $category) {
-            Category::create($category);
+            Category::firstOrCreate(['name' => $category['name']]);
         }
     }
 }

@@ -33,6 +33,7 @@ class SettingController extends Controller
             // IMPRESIÓN
             'direct_printing' => 'boolean',
             'separate_orders' => 'boolean',
+            'alert_sounds_enabled' => 'boolean',
 
             'printer_name' => 'required_if:direct_printing,1|nullable|string|max:255',
 
@@ -66,6 +67,7 @@ class SettingController extends Controller
         // IMPRESIÓN
         $validated['direct_printing'] = $request->boolean('direct_printing');
         $validated['separate_orders'] = $request->boolean('separate_orders');
+        $validated['alert_sounds_enabled'] = $request->boolean('alert_sounds_enabled');
 
         $validated['printer_name'] = $validated['direct_printing']
             ? $request->input('printer_name')

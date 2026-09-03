@@ -19,12 +19,6 @@
             </div>
 
             <div class="flex items-center gap-3">
-                <button type="button" wire:ignore data-alert-bell-toggle
-                    class="shrink-0 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 transition-colors hover:bg-emerald-100"
-                    aria-pressed="true">
-                    <i class="fa-solid fa-bell"></i>
-                    <span data-alert-bell-label>Silenciar campana</span>
-                </button>
                 <input wire:model.live="search" type="text" placeholder="Buscar mesa..."
                     class="min-w-0 flex-1 bg-white border border-slate-200 py-2 px-4 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500/20 transition-all md:w-64 shadow-sm">
             </div>
@@ -41,6 +35,11 @@
                                 {{ $correction->action === 'cancel' ? 'Anular' : 'Actualizar' }}
                             </span>
                             <p class="mt-3 text-lg font-black uppercase text-slate-800">{{ $correction->product_name }}</p>
+                            @if (!empty($correction->selected_options))
+                                <p class="mt-1 text-xs font-bold text-orange-600">
+                                    {{ collect($correction->selected_options)->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}
+                                </p>
+                            @endif
                             <p class="text-xs font-bold text-slate-500">
                                 Mesa {{ $correction->table_name ?? $correction->order?->table?->name ?? 'Sin mesa' }} ·
                                 {{ $correction->action === 'cancel' ? 'Anular ' . $correction->quantity : 'Actualizar a ' . $correction->quantity }}
@@ -103,10 +102,18 @@
                                             {{ $detail->quantity }}
                                         </span>
                                         <div class="min-w-0 flex-1">
-                                            <p
-                                                class="text-sm font-black text-slate-800 uppercase leading-snug break-words">
-                                                {{ $detail->product->name }}
-                                            </p>
+                                             <p
+                                                 class="text-sm font-black text-slate-800 uppercase leading-snug break-words">
+                                                 {{ $detail->product->name }}
+                                             </p>
+                                            @if (!empty($detail->selected_options))
+                                                <p class="mt-1 text-[10px] font-black text-orange-600">
+                                                    {{ collect($detail->selected_options)->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}
+                                                </p>
+                                            @endif
+                                            @if ($detail->preparationStation)
+                                                <p class="mt-1 text-[9px] font-black uppercase tracking-wide text-slate-400">{{ $detail->preparationStation->name }}</p>
+                                            @endif
                                             @if ($detail->notes)
                                                 <p
                                                     class="text-[10px] text-orange-500 font-bold italic mt-1 leading-tight uppercase bg-orange-50/50 p-1 rounded-lg">
@@ -192,22 +199,9 @@
         }
 
         window.__kitchenBellListenersRegistered = true;
-        const storageKey = 'restaurant-kitchen-bell-enabled';
         let audioContext;
-        let bellEnabled = localStorage.getItem(storageKey) !== 'false';
+        const bellEnabled = @js((bool) ($empresa->alert_sounds_enabled ?? true));
         let toastTimeout;
-
-        const syncBellToggle = () => {
-            document.querySelectorAll('[data-alert-bell-toggle]').forEach((toggle) => {
-                const label = toggle.querySelector('[data-alert-bell-label]');
-
-                toggle.setAttribute('aria-pressed', String(bellEnabled));
-                label.textContent = bellEnabled ? 'Silenciar campana' : 'Activar campana';
-                toggle.classList.toggle('bg-emerald-50', bellEnabled);
-                toggle.classList.toggle('border-emerald-200', bellEnabled);
-                toggle.classList.toggle('text-emerald-700', bellEnabled);
-            });
-        };
 
         const activateAudio = async () => {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -246,26 +240,6 @@
                 activateAudio().catch(() => {});
             }
         }, { once: true });
-
-        document.addEventListener('click', async (event) => {
-            const toggle = event.target.closest('[data-alert-bell-toggle]');
-
-            if (!toggle) {
-                return;
-            }
-
-            bellEnabled = !bellEnabled;
-            localStorage.setItem(storageKey, String(bellEnabled));
-
-            if (bellEnabled) {
-                await activateAudio();
-            }
-
-            syncBellToggle();
-            ringBell();
-        });
-
-        syncBellToggle();
 
         Livewire.on('kitchen-order-received', (event) => {
             const toast = document.querySelector('#kitchen-alert-toast');

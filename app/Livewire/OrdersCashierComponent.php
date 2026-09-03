@@ -33,6 +33,7 @@ class OrdersCashierComponent extends Component
     public $printer_name;
     public $direct_printing;
     public bool $quickCheckout = false;
+    public array $knownReadyOrderIds = [];
 
     public $subtotal = 0;
     public $tax = 0;
@@ -46,6 +47,7 @@ class OrdersCashierComponent extends Component
         $this->paymentMethods = PaymentMethod::all();
         $this->boxes = CashRegister::where('status', 'open')->get();
         $this->quickCheckout = request()->boolean('quick_checkout');
+        $this->knownReadyOrderIds = $this->readyOrders()->pluck('id')->map(fn ($id) => (int) $id)->all();
 
         $orderId = request()->integer('order');
         if (!$this->quickCheckout || !$orderId) {
@@ -56,6 +58,37 @@ class OrdersCashierComponent extends Component
         if ($order?->is_ready_for_checkout) {
             $this->openFullPayment($order->id);
         }
+    }
+
+    public function refreshReadyOrderAlerts(): void
+    {
+        $readyOrders = $this->readyOrders();
+        $newReadyOrders = $readyOrders->filter(
+            fn (Order $order) => !in_array($order->id, $this->knownReadyOrderIds, true)
+        );
+
+        if ($newReadyOrders->isNotEmpty()) {
+            $this->dispatch(
+                'order-ready-for-checkout',
+                orderId: $newReadyOrders->pluck('id')->all(),
+                tableName: $newReadyOrders->pluck('table.name')->filter()->join(', '),
+            );
+        }
+
+        $this->knownReadyOrderIds = $readyOrders->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    private function readyOrders()
+    {
+        return Order::query()
+            ->with('table')
+            ->where('status', 'abierto')
+            ->whereHas('details', fn ($query) => $query->where('cooking_status', '!=', 'cancelled'))
+            ->whereDoesntHave('details', fn ($query) => $query
+                ->where('requires_kitchen', true)
+                ->where('cooking_status', '!=', 'served')
+                ->where('cooking_status', '!=', 'cancelled'))
+            ->get();
     }
 
     public function getPaidProperty()
@@ -144,6 +177,7 @@ class OrdersCashierComponent extends Component
         }
 
         $details = $order->details()
+            ->whereNull('parent_detail_id')
             ->whereIn('id', $selectedDetailIds)
             ->where('cooking_status', '!=', 'cancelled')
             ->get();
@@ -184,6 +218,7 @@ class OrdersCashierComponent extends Component
         }
 
         $details = $order->details()
+            ->whereNull('parent_detail_id')
             ->where('cooking_status', '!=', 'cancelled')
             ->get();
 
@@ -319,6 +354,7 @@ class OrdersCashierComponent extends Component
 
                 $details = OrderDetail::query()
                     ->where('order_id', $order->id)
+                    ->whereNull('parent_detail_id')
                     ->whereIn('id', $detailIds)
                     ->where('cooking_status', '!=', 'cancelled')
                     ->lockForUpdate()
@@ -372,6 +408,7 @@ class OrdersCashierComponent extends Component
                         'subtotal' => $detail->subtotal,
                         'tax' => $detail->tax,
                         'notes' => $detail->notes,
+                        'selected_options' => $detail->selected_options,
                     ]);
                 }
 
@@ -495,8 +532,9 @@ class OrdersCashierComponent extends Component
         $orders = Order::with([
             'table',
             'details' => function ($q) {
-                $q->where('cooking_status', '!=', 'cancelled')
-                    ->with('product');
+                $q->whereNull('parent_detail_id')
+                    ->where('cooking_status', '!=', 'cancelled')
+                    ->with(['product', 'components']);
             },
             'user'
         ])

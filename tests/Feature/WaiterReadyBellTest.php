@@ -181,7 +181,7 @@ it('alerts the waiter once when every kitchen item in the order is ready', funct
         ->assertNotDispatched('order-ready-for-service');
 });
 
-it('renders waiter alerts enabled by default', function () {
+it('uses the administrator sound setting for waiter alerts', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
     $table = Table::create([
         'name' => 'Mesa control de campana',
@@ -193,8 +193,7 @@ it('renders waiter alerts enabled by default', function () {
 
     Livewire::test(OrderCreateComponent::class, ['table' => $table])
         ->assertSeeHtml('wire:poll.5s="refreshReadyOrderAlert"')
-        ->assertSeeHtml('data-waiter-bell-toggle')
-        ->assertSeeHtml('aria-pressed="true"')
-        ->assertSeeHtml("Livewire.on('order-ready-for-service'")
-        ->assertSeeHtml('restaurant-waiter-bell-enabled');
+        ->assertDontSeeHtml('data-waiter-bell-toggle')
+        ->assertSeeHtml('const bellEnabled = true')
+        ->assertSeeHtml("Livewire.on('order-ready-for-service'");
 });

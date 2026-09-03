@@ -57,7 +57,7 @@ class OrdersChefComponent extends Component
 
     private function kitchenDetailIds(): array
     {
-        return OrderDetail::query()
+        return $this->applyStationScope(OrderDetail::query())
             ->where('requires_kitchen', true)
             ->where('cooking_status', '!=', 'cancelled')
             ->whereHas('order', fn ($query) => $query->where('status', 'abierto'))
@@ -66,9 +66,29 @@ class OrdersChefComponent extends Component
             ->all();
     }
 
+    private function visibleStationIds(): array
+    {
+        $user = auth()->user();
+
+        if (!$user || $user->hasRole('admin')) {
+            return [];
+        }
+
+        return $user->preparationStations()->pluck('preparation_stations.id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    private function applyStationScope($query)
+    {
+        $stationIds = $this->visibleStationIds();
+
+        return $stationIds === []
+            ? $query
+            : $query->whereIn('preparation_station_id', $stationIds);
+    }
+
     private function kitchenCorrectionIds(): array
     {
-        return OrderCorrection::query()
+        return $this->applyStationScope(OrderCorrection::query())
             ->whereNull('acknowledged_at')
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
@@ -77,7 +97,7 @@ class OrdersChefComponent extends Component
 
     public function markDetailAsReady($detailId)
     {
-        $updated = OrderDetail::query()
+        $updated = $this->applyStationScope(OrderDetail::query())
             ->whereKey($detailId)
             ->whereIn('cooking_status', ['pending', 'in_progress'])
             ->whereHas('order', fn ($query) => $query->where('status', 'abierto'))
@@ -95,7 +115,7 @@ class OrdersChefComponent extends Component
 
     public function markOrderAsReady($orderId): void
     {
-        $updated = OrderDetail::query()
+        $updated = $this->applyStationScope(OrderDetail::query())
             ->where('order_id', $orderId)
             ->where('requires_kitchen', true)
             ->whereIn('cooking_status', ['pending', 'in_progress'])
@@ -115,7 +135,7 @@ class OrdersChefComponent extends Component
     public function acknowledgeCorrection($correctionId): void
     {
         $result = DB::transaction(function () use ($correctionId) {
-            $correction = OrderCorrection::query()
+            $correction = $this->applyStationScope(OrderCorrection::query())
                 ->whereKey($correctionId)
                 ->whereNull('acknowledged_at')
                 ->lockForUpdate()
@@ -165,12 +185,14 @@ class OrdersChefComponent extends Component
 
     public function render()
 {
-    $orders = Order::with([
+        $stationIds = $this->visibleStationIds();
+        $orders = Order::with([
             'table',
-            'details' => function ($q) {
+            'details' => function ($q) use ($stationIds) {
                 $q->where('requires_kitchen', true)
                   ->whereNotIn('cooking_status', ['cancelled', 'served'])
-                  ->with('product');
+                  ->when($stationIds !== [], fn ($q) => $q->whereIn('preparation_station_id', $stationIds))
+                  ->with(['product', 'preparationStation']);
             },
             'user'
         ])->where('status', 'abierto') 
@@ -180,14 +202,15 @@ class OrdersChefComponent extends Component
             $q->where('name', 'like', '%' . $this->search . '%');
         })
         
-        ->whereHas('details', function ($q) {
+        ->whereHas('details', function ($q) use ($stationIds) {
             $q->where('requires_kitchen', true)
-              ->whereNotIn('cooking_status', ['cancelled', 'served']);
+              ->whereNotIn('cooking_status', ['cancelled', 'served'])
+              ->when($stationIds !== [], fn ($q) => $q->whereIn('preparation_station_id', $stationIds));
         })
         ->orderByDesc('created_at')
         ->paginate(12);
 
-    $corrections = OrderCorrection::with('order.table')
+    $corrections = $this->applyStationScope(OrderCorrection::with(['order.table', 'preparationStation']))
         ->whereNull('acknowledged_at')
         ->oldest()
         ->get();

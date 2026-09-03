@@ -37,12 +37,6 @@
 
             <!-- Buscador -->
             <div class="flex items-center gap-3">
-                <button type="button" wire:ignore data-waiter-bell-toggle
-                    class="shrink-0 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 transition-colors hover:bg-emerald-100"
-                    title="Silenciar campana" aria-label="Campana de avisos" aria-pressed="true">
-                    <i class="fa-solid fa-bell"></i>
-                    <span class="hidden sm:inline" data-waiter-bell-label>Silenciar campana</span>
-                </button>
                 <input wire:model.live="search" type="text" placeholder="Buscar mesa..."
                     class="bg-white border border-slate-200 py-2 px-4 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500/20 transition-all w-64 shadow-sm">
             </div>
@@ -71,22 +65,25 @@
                     {{-- CUERPO: PRODUCTOS --}}
                     <div class="p-4 flex-1 space-y-5 max-h-[400px] overflow-y-auto custom-scrollbar">
                         @foreach ($order->details as $detail)
+                            @php
+                                $serviceStatus = $detail->service_status;
+                            @endphp
                             <div
                                 class="group relative bg-white p-3 pt-5 rounded-2xl border border-slate-100 shadow-sm transition-all">
 
                                 <div class="absolute -top-2.5 left-3">
-                                    @if (!$detail->requires_kitchen && $detail->cooking_status !== 'served')
+                                    @if (!$detail->requires_kitchen && $detail->components->isEmpty() && $serviceStatus !== 'served')
                                         <span
                                             class="bg-blue-100 text-blue-700 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest">Para entregar</span>
-                                    @elseif ($detail->cooking_status === 'in_progress')
+                                    @elseif ($serviceStatus === 'in_progress')
                                         <span
                                             class="bg-amber-500 text-white text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest shadow-sm animate-pulse">En
                                             Proceso
                                         </span>
-                                    @elseif ($detail->cooking_status === 'pending')
+                                    @elseif ($serviceStatus === 'pending')
                                         <span
                                             class="bg-slate-200 text-slate-500 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest">Pendiente</span>
-                                    @elseif($detail->cooking_status === 'ready')
+                                    @elseif($serviceStatus === 'ready')
                                         <span
                                             class="bg-emerald-500 text-white text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest shadow-sm">Listo</span>
                                     @else
@@ -106,6 +103,11 @@
                                                 class="text-sm font-black text-slate-800 uppercase leading-snug break-words">
                                                 {{ $detail->product->name }}
                                             </p>
+                                            @if (!empty($detail->selected_options))
+                                                <p class="mt-1 text-[10px] font-black text-orange-600">
+                                                    {{ collect($detail->selected_options)->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}
+                                                </p>
+                                            @endif
                                             @if ($detail->notes)
                                                 <p
                                                     class="text-[10px] text-orange-500 font-bold italic mt-1 leading-tight uppercase bg-orange-50/50 p-1 rounded-lg">
@@ -115,7 +117,7 @@
                                         </div>
                                     </div>
 
-                                    @if ($detail->cooking_status === 'ready' || !$detail->requires_kitchen)
+                                    @if ($serviceStatus === 'ready' || (!$detail->requires_kitchen && $detail->components->isEmpty()))
                                         <div class="shrink-0 flex flex-col items-end gap-2">
                                             <button wire:click="markDetailAsServed({{ $detail->id }})"
                                                 title="Marcar como entregado"
@@ -124,19 +126,23 @@
                                                 <i class="fa-solid fa-check-double text-xs"></i>
                                                 Entregar
                                             </button>
-                                            <button wire:click="cancelarDetalle({{ $detail->id }})"
-                                                title="Cancelar pedido"
-                                                class="bg-slate-100 hover:bg-red-500 text-slate-700 hover:text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 border border-slate-200/60 shadow-sm">
-                                                <i class="fa-solid fa-xmark text-xs"></i>
-                                            </button>
+                                            @if ($detail->components->isEmpty())
+                                                <button wire:click="cancelarDetalle({{ $detail->id }})"
+                                                    title="Cancelar pedido"
+                                                    class="bg-slate-100 hover:bg-red-500 text-slate-700 hover:text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 border border-slate-200/60 shadow-sm">
+                                                    <i class="fa-solid fa-xmark text-xs"></i>
+                                                </button>
+                                            @endif
                                         </div>
-                                    @elseif ($detail->cooking_status !== 'served')
+                                    @elseif ($serviceStatus !== 'served')
                                         <div class="shrink-0">
-                                            <button wire:click="cancelarDetalle({{ $detail->id }})"
-                                                title="Cancelar pedido"
-                                                class="bg-slate-100 hover:bg-red-500 text-slate-700 hover:text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 border border-slate-200/60 shadow-sm">
-                                                <i class="fa-solid fa-xmark text-xs"></i>
-                                            </button>
+                                            @if ($detail->components->isEmpty())
+                                                <button wire:click="cancelarDetalle({{ $detail->id }})"
+                                                    title="Cancelar pedido"
+                                                    class="bg-slate-100 hover:bg-red-500 text-slate-700 hover:text-white w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 border border-slate-200/60 shadow-sm">
+                                                    <i class="fa-solid fa-xmark text-xs"></i>
+                                                </button>
+                                            @endif
                                         </div>
                                     @endif
                                 </div>

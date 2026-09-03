@@ -29,6 +29,7 @@ class ViewServiceProvider extends ServiceProvider
                 'favicon_path' => null,
                 'direct_printing' => false,
                 'separate_orders' => false,
+                'alert_sounds_enabled' => true,
             ]);
 
             $view->with('empresa', $empresa);

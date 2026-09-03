@@ -253,8 +253,25 @@
 
                                     <label
                                         class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        <i class="fas fa-print"></i> Configuración de Impresión
+                                        <i class="fas fa-sliders"></i> Configuración operativa e impresión
                                     </label>
+
+                                    <div
+                                        class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                        <div class="flex flex-col">
+                                            <span class="text-xs font-bold text-slate-700">Sonidos de alerta</span>
+                                            <span class="text-[10px] text-slate-400 font-medium">Activa avisos para cocina, mozos y caja.</span>
+                                        </div>
+
+                                        <input type="hidden" name="alert_sounds_enabled" value="0">
+                                        <label class="relative inline-flex items-center cursor-pointer select-none">
+                                            <input type="checkbox" name="alert_sounds_enabled" value="1"
+                                                @checked(old('alert_sounds_enabled', $setting->alert_sounds_enabled ?? true)) class="sr-only peer">
+                                            <div
+                                                class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600">
+                                            </div>
+                                        </label>
+                                    </div>
 
                                     <!-- IMPRESION DIRECTA -->
                                     <div

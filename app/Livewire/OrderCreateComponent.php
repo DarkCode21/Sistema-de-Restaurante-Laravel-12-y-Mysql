@@ -47,6 +47,9 @@ class OrderCreateComponent extends Component
     public $printer_name;
     public $separate_orders = false;
     public $kitchen_printer_name;
+    public bool $isOpenProductOptions = false;
+    public array $configuringProduct = [];
+    public array $selectedOptionValueIds = [];
 
     public $newCustomer = [
         'name' => '',
@@ -66,7 +69,7 @@ class OrderCreateComponent extends Component
         $this->kitchen_printer_name = $setting->kitchen_printer_name;
         $this->separate_orders = $setting->separate_orders;
 
-        $this->order = Order::with('details.product')
+        $this->order = Order::with(['details.product', 'details.components.product'])
             ->where('table_id', $this->table->id)
             ->where('status', 'abierto')
             ->first();
@@ -85,7 +88,7 @@ class OrderCreateComponent extends Component
             return;
         }
 
-        $order = Order::with(['details', 'table'])->find($this->order->id);
+        $order = Order::with(['details.components', 'table'])->find($this->order->id);
 
         if (!$order || $order->status !== 'abierto') {
             $this->clearClosedOrder();
@@ -128,9 +131,9 @@ class OrderCreateComponent extends Component
             return;
         }
 
-        $this->order->loadMissing('details.product');
+        $this->order->loadMissing(['details.product', 'details.components.product']);
         $this->cart = $this->order->details
-            ->filter(fn (OrderDetail $detail) => $detail->product && $detail->cooking_status !== 'cancelled')
+            ->filter(fn (OrderDetail $detail) => !$detail->parent_detail_id && $detail->product && $detail->cooking_status !== 'cancelled')
             ->mapWithKeys(fn (OrderDetail $detail) => [
                 $this->cartKeyForDetail($detail) => [
                     'detail_id' => $detail->id,
@@ -140,9 +143,20 @@ class OrderCreateComponent extends Component
                     'quantity' => $detail->quantity,
                     'subtotal' => (float) $detail->subtotal,
                     'notes' => $detail->notes,
-                    'requires_kitchen' => (bool) $detail->requires_kitchen,
-                    'cooking_status' => $detail->cooking_status,
+                    'selected_options' => $detail->selected_options ?? [],
+                    'option_key' => collect($detail->selected_options ?? [])->pluck('value_id')->sort()->join('-'),
+                    'preparation_station_id' => $detail->preparation_station_id,
+                    'requires_kitchen' => (bool) ($detail->requires_kitchen || $detail->components->contains('requires_kitchen', true)),
+                    'cooking_status' => $detail->service_status,
                     'is_printed' => (bool) $detail->is_printed,
+                    'is_combo' => $detail->components->isNotEmpty(),
+                    'components' => $detail->components->map(fn (OrderDetail $component) => [
+                        'product_id' => $component->product_id,
+                        'quantity' => $component->quantity / $detail->quantity,
+                        'selected_options' => $component->selected_options ?? [],
+                        'preparation_station_id' => $component->preparation_station_id,
+                        'requires_kitchen' => (bool) $component->requires_kitchen,
+                    ])->all(),
                 ],
             ])
             ->all();
@@ -167,7 +181,7 @@ class OrderCreateComponent extends Component
                 continue;
             }
 
-            $this->cart[$cartKey]['cooking_status'] = $detail->cooking_status;
+            $this->cart[$cartKey]['cooking_status'] = $detail->service_status;
             $this->cart[$cartKey]['is_printed'] = (bool) $detail->is_printed;
         }
 
@@ -189,9 +203,9 @@ class OrderCreateComponent extends Component
         return "detail-{$detail->id}";
     }
 
-    private function draftCartKey(int $productId): string
+    private function draftCartKey(int $productId, string $optionKey = ''): string
     {
-        return "new-{$productId}";
+        return "new-{$productId}-" . ($optionKey ?: 'base');
     }
 
     private function itemWasSent(array $item): bool
@@ -221,16 +235,20 @@ class OrderCreateComponent extends Component
         return false;
     }
 
-    private function cartKeyForProduct(int $productId): ?string
+    private function cartKeyForProduct(int $productId, string $optionKey = ''): ?string
     {
         foreach ($this->cart as $cartKey => $item) {
-            if ((int) $item['product_id'] === $productId && !$item['detail_id']) {
+            if ((int) $item['product_id'] === $productId
+                && ($item['option_key'] ?? '') === $optionKey
+                && !$item['detail_id']) {
                 return $cartKey;
             }
         }
 
         foreach ($this->cart as $cartKey => $item) {
-            if ((int) $item['product_id'] === $productId && !$this->itemWasSent($item)) {
+            if ((int) $item['product_id'] === $productId
+                && ($item['option_key'] ?? '') === $optionKey
+                && !$this->itemWasSent($item)) {
                 return $cartKey;
             }
         }
@@ -240,7 +258,51 @@ class OrderCreateComponent extends Component
 
     private function hasStockForOneMore(array $item, Product $product): bool
     {
-        return $product->stock > ($item['detail_id'] ? 0 : $item['quantity']);
+        if ($item['detail_id']) {
+            return $product->stock > 0;
+        }
+
+        $draftQuantity = collect($this->cart)
+            ->filter(fn ($cartItem) => (int) $cartItem['product_id'] === $product->id && !$cartItem['detail_id'])
+            ->sum('quantity');
+
+        return $product->stock > $draftQuantity;
+    }
+
+    private function hasStockForCombo(array $components): bool
+    {
+        foreach ($components as $component) {
+            $product = Product::find($component['product_id']);
+            $draftQuantity = collect($this->cart)
+                ->filter(fn ($item) => !$item['detail_id'] && ($item['is_combo'] ?? false))
+                ->sum(fn ($item) => collect($item['components'] ?? [])
+                    ->where('product_id', $component['product_id'])
+                    ->sum(fn ($draftComponent) => $draftComponent['quantity'] * $item['quantity']));
+
+            if (!$product || $product->stock < $draftQuantity + $component['quantity']) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function hasStockForOneMoreCombo(array $item): bool
+    {
+        foreach ($item['components'] as $component) {
+            $product = Product::find($component['product_id']);
+            $draftQuantity = collect($this->cart)
+                ->filter(fn ($cartItem) => !$cartItem['detail_id'] && ($cartItem['is_combo'] ?? false))
+                ->sum(fn ($cartItem) => collect($cartItem['components'] ?? [])
+                    ->where('product_id', $component['product_id'])
+                    ->sum(fn ($draftComponent) => $draftComponent['quantity'] * $cartItem['quantity']));
+
+            if (!$product || $product->stock < $draftQuantity + $component['quantity']) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function updatingSearch()
@@ -328,18 +390,132 @@ class OrderCreateComponent extends Component
 
     public function addToOrder($productId)
     {
-        $product = Product::find($productId);
+        $product = Product::with(['optionGroups.values', 'components.optionGroups.values'])->find($productId);
 
         if (!$product || ($this->order && $this->order->status !== 'abierto')) {
             return;
         }
 
-        $cartKey = $this->cartKeyForProduct($product->id);
+        if ($product->is_combo && $product->components->isEmpty()) {
+            $this->dispatch('swal', [
+                'title' => 'Combo incompleto',
+                'text' => 'Configura al menos un componente antes de vender este combo.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
+        $optionGroups = $product->is_combo
+            ? $product->components->flatMap(fn (Product $component) => $component->optionGroups->map(fn ($group) => [
+                'id' => $group->id,
+                'name' => "{$component->name}: {$group->name}",
+                'required' => $group->required,
+                'values' => $group->values->map(fn ($value) => [
+                    'id' => $value->id,
+                    'name' => $value->name,
+                    'price_adjustment' => (float) $value->price_adjustment,
+                ])->all(),
+            ]))->all()
+            : $product->optionGroups->map(fn ($group) => [
+                'id' => $group->id,
+                'name' => $group->name,
+                'required' => $group->required,
+                'values' => $group->values->map(fn ($value) => [
+                    'id' => $value->id,
+                    'name' => $value->name,
+                    'price_adjustment' => (float) $value->price_adjustment,
+                ])->all(),
+            ])->all();
+
+        if ($optionGroups !== []) {
+            $this->configuringProduct = [
+                'id' => $product->id,
+                'name' => $product->name,
+                'price' => (float) $product->price,
+                'option_groups' => $optionGroups,
+            ];
+            $this->selectedOptionValueIds = [];
+            $this->isOpenProductOptions = true;
+            return;
+        }
+
+        $this->addProductToCart($product, [], $product->components->map(fn (Product $component) => [
+            'product_id' => $component->id,
+            'quantity' => $component->pivot->quantity,
+            'selected_options' => [],
+            'preparation_station_id' => $component->preparation_station_id,
+            'requires_kitchen' => $component->requires_kitchen,
+        ])->all());
+    }
+
+    public function confirmProductOptions(): void
+    {
+        $product = Product::with(['optionGroups.values', 'components.optionGroups.values'])->find($this->configuringProduct['id'] ?? null);
+
+        if (!$product || !$product->status) {
+            $this->isOpenProductOptions = false;
+            return;
+        }
+
+        $selectedOptions = [];
+
+        $productsToConfigure = $product->is_combo ? $product->components : collect([$product]);
+        $components = [];
+
+        foreach ($productsToConfigure as $configuredProduct) {
+            $componentOptions = [];
+
+            foreach ($configuredProduct->optionGroups as $group) {
+                $valueId = $this->selectedOptionValueIds[$group->id] ?? null;
+                $value = $group->values->firstWhere('id', (int) $valueId);
+
+                if ($group->required && !$value) {
+                    $this->dispatch('swal', [
+                        'title' => 'Falta una selección',
+                        'text' => "Elige una opción para {$configuredProduct->name}: {$group->name}.",
+                        'icon' => 'warning',
+                    ]);
+                    return;
+                }
+
+                if ($value) {
+                    $option = [
+                        'group' => $product->is_combo ? "{$configuredProduct->name}: {$group->name}" : $group->name,
+                        'value' => $value->name,
+                        'value_id' => $value->id,
+                        'price_adjustment' => (float) $value->price_adjustment,
+                    ];
+                    $selectedOptions[] = $option;
+                    $componentOptions[] = $option;
+                }
+            }
+
+            if ($product->is_combo) {
+                $components[] = [
+                    'product_id' => $configuredProduct->id,
+                    'quantity' => $configuredProduct->pivot->quantity,
+                    'selected_options' => $componentOptions,
+                    'preparation_station_id' => $configuredProduct->preparation_station_id,
+                    'requires_kitchen' => $configuredProduct->requires_kitchen,
+                ];
+            }
+        }
+
+        $this->addProductToCart($product, $selectedOptions, $components);
+        $this->isOpenProductOptions = false;
+        $this->configuringProduct = [];
+        $this->selectedOptionValueIds = [];
+    }
+
+    private function addProductToCart(Product $product, array $selectedOptions, array $components = []): void
+    {
+        $optionKey = collect($selectedOptions)->pluck('value_id')->sort()->join('-');
+        $cartKey = $this->cartKeyForProduct($product->id, $optionKey);
 
         if ($cartKey !== null) {
             $item = $this->cart[$cartKey];
 
-            if (!$this->hasStockForOneMore($item, $product)) {
+            if (($item['is_combo'] ?? false) ? !$this->hasStockForOneMoreCombo($item) : !$this->hasStockForOneMore($item, $product)) {
                 $this->dispatch('swal', [
                     'title' => 'Sin stock',
                     'text' => 'No hay suficiente stock para ' . $product->name,
@@ -351,7 +527,9 @@ class OrderCreateComponent extends Component
             $this->cart[$cartKey]['quantity']++;
             $this->cart[$cartKey]['subtotal'] =
                 $this->cart[$cartKey]['quantity'] * $this->cart[$cartKey]['price'];
-        } elseif ($product->stock < 1) {
+        } elseif (($product->is_combo && !$this->hasStockForCombo($components)) || (!$product->is_combo && $product->stock <= collect($this->cart)
+            ->filter(fn ($item) => (int) $item['product_id'] === $product->id && !$item['detail_id'])
+            ->sum('quantity'))) {
             $this->dispatch('swal', [
                 'title' => 'Sin stock',
                 'text' => 'No hay suficiente stock para ' . $product->name,
@@ -359,16 +537,24 @@ class OrderCreateComponent extends Component
             ]);
             return;
         } else {
-            $this->cart[$this->draftCartKey($product->id)] = [
+            $price = (float) $product->price + collect($selectedOptions)->sum('price_adjustment');
+            $this->cart[$this->draftCartKey($product->id, $optionKey)] = [
                 'detail_id' => null,
                 'product_id' => $product->id,
                 'name' => $product->name,
-                'price' => (float) $product->price,
+                'price' => $price,
                 'quantity' => 1,
-                'subtotal' => (float) $product->price,
-                'requires_kitchen' => $product->requires_kitchen,
+                'subtotal' => $price,
+                'selected_options' => $selectedOptions,
+                'option_key' => $optionKey,
+                'preparation_station_id' => $product->preparation_station_id,
+                'requires_kitchen' => $product->is_combo
+                    ? collect($components)->contains('requires_kitchen', true)
+                    : $product->requires_kitchen,
                 'cooking_status' => 'pending',
                 'is_printed' => false,
+                'is_combo' => $product->is_combo,
+                'components' => $components,
             ];
         }
 
@@ -395,7 +581,16 @@ class OrderCreateComponent extends Component
             return;
         }
 
-        if (!$this->hasStockForOneMore($item, $product)) {
+        if (($item['is_combo'] ?? false) && $item['detail_id']) {
+            $this->dispatch('swal', [
+                'title' => 'Combo ya enviado',
+                'text' => 'Agrega otro combo para pedir una porción adicional.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
+        if (($item['is_combo'] ?? false) ? !$this->hasStockForOneMoreCombo($item) : !$this->hasStockForOneMore($item, $product)) {
             $this->dispatch('swal', [
                 'title' => 'Sin stock',
                 'text' => 'No puedes agregar más de ' . $product->name,
@@ -414,6 +609,15 @@ class OrderCreateComponent extends Component
     public function decrement($cartKey)
     {
         if (!$this->canEditCartItem($cartKey)) {
+            return;
+        }
+
+        if (($this->cart[$cartKey]['is_combo'] ?? false) && $this->cart[$cartKey]['detail_id']) {
+            $this->dispatch('swal', [
+                'title' => 'Combo ya enviado',
+                'text' => 'No se puede cambiar la cantidad de un combo ya enviado.',
+                'icon' => 'warning',
+            ]);
             return;
         }
 
@@ -459,23 +663,47 @@ class OrderCreateComponent extends Component
                         throw new \RuntimeException('Este plato ya no se puede eliminar.');
                     }
 
-                    $wasSent = $detail->is_printed || $detail->cooking_status !== 'pending';
-
-                    $product = Product::query()
-                        ->whereKey($detail->product_id)
+                    $components = OrderDetail::query()
+                        ->where('parent_detail_id', $detail->id)
                         ->lockForUpdate()
-                        ->first();
+                        ->get();
+                    $correctionIds = [];
 
-                    if ($product) {
-                        $product->increment('stock', $detail->quantity);
-                    }
+                    if ($components->isNotEmpty()) {
+                        if ($components->contains(fn (OrderDetail $component) => in_array($component->cooking_status, ['served', 'cancelled'], true))) {
+                            throw new \RuntimeException('Un componente del combo ya no se puede eliminar.');
+                        }
 
-                    if ($wasSent) {
-                        $detail->update(['cooking_status' => 'cancelled']);
-                        $correction = OrderCorrection::record($detail, 'cancel');
-                    } else {
+                        foreach ($components as $component) {
+                            $product = Product::query()->whereKey($component->product_id)->lockForUpdate()->first();
+                            $product?->increment('stock', $component->quantity);
+
+                            if ($component->is_printed || $component->cooking_status !== 'pending') {
+                                $component->update(['cooking_status' => 'cancelled']);
+                                $correctionIds[] = OrderCorrection::record($component, 'cancel')->id;
+                            }
+                        }
+
                         $detail->delete();
-                        $correction = null;
+                        $wasSent = $correctionIds !== [];
+                    } else {
+                        $wasSent = $detail->is_printed || $detail->cooking_status !== 'pending';
+
+                        $product = Product::query()
+                            ->whereKey($detail->product_id)
+                            ->lockForUpdate()
+                            ->first();
+
+                        if ($product) {
+                            $product->increment('stock', $detail->quantity);
+                        }
+
+                        if ($wasSent) {
+                            $detail->update(['cooking_status' => 'cancelled']);
+                            $correctionIds[] = OrderCorrection::record($detail, 'cancel')->id;
+                        } else {
+                            $detail->delete();
+                        }
                     }
 
                     $remainingDetails = $order->details()
@@ -516,7 +744,7 @@ class OrderCreateComponent extends Component
                         'detail_id' => $detail->id,
                         'order_id' => $order->id,
                         'was_sent' => $wasSent,
-                        'correction_id' => $correction?->id,
+                        'correction_ids' => $correctionIds,
                         'order_closed' => $orderClosed,
                     ];
                 });
@@ -532,7 +760,7 @@ class OrderCreateComponent extends Component
             }
 
             if ($result['was_sent'] ?? false) {
-                $this->dispatchKitchenCorrections($result['order_id'], [$result['correction_id']]);
+                $this->dispatchKitchenCorrections($result['order_id'], $result['correction_ids']);
             }
 
             $this->dispatch('swal', [
@@ -589,14 +817,29 @@ class OrderCreateComponent extends Component
 
                 $newNotes = $notes ?: null;
                 $changed = $detail->notes !== $newNotes;
-
-                $correction = null;
+                $correctionIds = [];
+                $components = OrderDetail::query()
+                    ->where('parent_detail_id', $detail->id)
+                    ->lockForUpdate()
+                    ->get();
 
                 if ($changed) {
                     $detail->update(['notes' => $newNotes]);
 
-                    if ($detail->is_printed || $detail->cooking_status !== 'pending') {
-                        $correction = OrderCorrection::record($detail, 'update');
+                    if ($components->isNotEmpty()) {
+                        foreach ($components as $component) {
+                            if (in_array($component->cooking_status, ['served', 'cancelled'], true)) {
+                                throw new \RuntimeException('Un componente ya entregado no se puede modificar.');
+                            }
+
+                            $component->update(['notes' => $newNotes]);
+
+                            if ($component->is_printed || $component->cooking_status !== 'pending') {
+                                $correctionIds[] = OrderCorrection::record($component, 'update')->id;
+                            }
+                        }
+                    } elseif ($detail->is_printed || $detail->cooking_status !== 'pending') {
+                        $correctionIds[] = OrderCorrection::record($detail, 'update')->id;
                     }
                 }
 
@@ -604,7 +847,7 @@ class OrderCreateComponent extends Component
                     'changed' => $changed,
                     'detail_id' => $detail->id,
                     'order_id' => $order->id,
-                    'correction_id' => $correction?->id,
+                    'correction_ids' => $correctionIds,
                 ];
             });
 
@@ -615,8 +858,8 @@ class OrderCreateComponent extends Component
                 }
             }
 
-            if ($result['correction_id']) {
-                $this->dispatchKitchenCorrections($result['order_id'], [$result['correction_id']]);
+            if ($result['correction_ids'] !== []) {
+                $this->dispatchKitchenCorrections($result['order_id'], $result['correction_ids']);
             }
         } catch (\Throwable $e) {
             $this->dispatch('swal', [
@@ -831,6 +1074,36 @@ class OrderCreateComponent extends Component
                         $wasSent = $detail->is_printed || $detail->cooking_status !== 'pending';
                         $newNotes = $notes ?: null;
 
+                        if ($product->is_combo) {
+                            if ($difference !== 0) {
+                                throw new \RuntimeException('La cantidad de un combo enviado no se puede cambiar.');
+                            }
+
+                            $components = OrderDetail::query()
+                                ->where('parent_detail_id', $detail->id)
+                                ->lockForUpdate()
+                                ->get();
+                            $componentCorrectionIds = [];
+
+                            foreach ($components as $component) {
+                                if (in_array($component->cooking_status, ['served', 'cancelled'], true)) {
+                                    throw new \RuntimeException('Un componente ya entregado no se puede modificar.');
+                                }
+
+                                if ($component->notes !== $newNotes) {
+                                    $component->update(['notes' => $newNotes]);
+
+                                    if ($component->is_printed || $component->cooking_status !== 'pending') {
+                                        $componentCorrectionIds[] = OrderCorrection::record($component, 'update')->id;
+                                    }
+                                }
+                            }
+
+                            $detail->update(['notes' => $newNotes]);
+                            $correctionIds = [...$correctionIds, ...$componentCorrectionIds];
+                            continue;
+                        }
+
                         if ($wasSent && $difference > 0) {
                             if ($product->stock < $difference) {
                                 throw new \RuntimeException("Stock insuficiente para {$product->name}");
@@ -843,6 +1116,8 @@ class OrderCreateComponent extends Component
                                 'price' => $detail->price,
                                 'subtotal' => $detail->price * $difference,
                                 'notes' => $newNotes,
+                                'selected_options' => $detail->selected_options,
+                                'preparation_station_id' => $detail->preparation_station_id,
                                 'requires_kitchen' => $detail->requires_kitchen,
                                 'cooking_status' => 'pending',
                                 'is_printed' => false,
@@ -891,6 +1166,58 @@ class OrderCreateComponent extends Component
                         throw new \RuntimeException('Producto no encontrado.');
                     }
 
+                    if ($product->is_combo) {
+                        $components = $item['components'] ?? [];
+
+                        if ($components === []) {
+                            throw new \RuntimeException("El combo {$product->name} no tiene componentes.");
+                        }
+
+                        $componentProducts = Product::query()
+                            ->whereIn('id', collect($components)->pluck('product_id')->sort())
+                            ->orderBy('id')
+                            ->lockForUpdate()
+                            ->get()
+                            ->keyBy('id');
+                        $parent = $order->details()->create([
+                            'product_id' => $product->id,
+                            'quantity' => $quantity,
+                            'price' => $item['price'],
+                            'subtotal' => $item['price'] * $quantity,
+                            'notes' => $notes ?: null,
+                            'selected_options' => $item['selected_options'] ?? [],
+                            'requires_kitchen' => false,
+                            'cooking_status' => 'pending',
+                            'is_printed' => false,
+                        ]);
+
+                        foreach ($components as $component) {
+                            $componentProduct = $componentProducts->get($component['product_id']);
+                            $componentQuantity = (int) $component['quantity'] * $quantity;
+
+                            if (!$componentProduct || $componentProduct->is_combo || $componentProduct->stock < $componentQuantity) {
+                                throw new \RuntimeException("Stock insuficiente para un componente de {$product->name}");
+                            }
+
+                            $componentProduct->decrement('stock', $componentQuantity);
+                            $order->details()->create([
+                                'parent_detail_id' => $parent->id,
+                                'product_id' => $componentProduct->id,
+                                'quantity' => $componentQuantity,
+                                'price' => 0,
+                                'subtotal' => 0,
+                                'notes' => $notes ?: null,
+                                'selected_options' => $component['selected_options'] ?? [],
+                                'preparation_station_id' => $componentProduct->preparation_station_id,
+                                'requires_kitchen' => $componentProduct->requires_kitchen,
+                                'cooking_status' => 'pending',
+                                'is_printed' => false,
+                            ]);
+                        }
+
+                        continue;
+                    }
+
                     if ($product->stock < $quantity) {
                         throw new \RuntimeException("Stock insuficiente para {$product->name}");
                     }
@@ -899,10 +1226,12 @@ class OrderCreateComponent extends Component
                     $order->details()->create([
                         'product_id' => $product->id,
                         'quantity' => $quantity,
-                        'price' => $product->price,
-                        'subtotal' => $product->price * $quantity,
+                        'price' => $item['price'],
+                        'subtotal' => $item['price'] * $quantity,
                         'notes' => $notes ?: null,
-                        'requires_kitchen' => $product->requires_kitchen,
+                        'selected_options' => $item['selected_options'] ?? [],
+                        'preparation_station_id' => $item['preparation_station_id'] ?? $product->preparation_station_id,
+                        'requires_kitchen' => $item['requires_kitchen'],
                         'cooking_status' => 'pending',
                         'is_printed' => false,
                     ]);
@@ -934,7 +1263,7 @@ class OrderCreateComponent extends Component
             }
 
             $this->order = $result['order'];
-            $this->order->load('details.product.category');
+            $this->order->load(['details.product.category', 'details.components.product']);
             $itemsToPrint = $this->itemsToPrint;
 
             if ($itemsToPrint->isNotEmpty()) {
@@ -989,17 +1318,38 @@ class OrderCreateComponent extends Component
                 return false;
             }
 
-            return OrderDetail::query()
+            $detail = OrderDetail::query()
                 ->whereKey($detailId)
                 ->where('order_id', $order->id)
-                ->where(function ($query) {
-                    $query->where('cooking_status', 'ready')
-                        ->orWhere(fn ($query) => $query
-                            ->where('requires_kitchen', false)
-                            ->whereNotIn('cooking_status', ['served', 'cancelled']));
-                })
                 ->lockForUpdate()
-                ->update(['cooking_status' => 'served']) === 1;
+                ->first();
+
+            if (!$detail) {
+                return false;
+            }
+
+            $components = OrderDetail::query()
+                ->where('parent_detail_id', $detail->id)
+                ->lockForUpdate()
+                ->get();
+
+            if ($components->isNotEmpty()) {
+                if ($components->where('requires_kitchen', true)
+                    ->contains(fn (OrderDetail $component) => !in_array($component->cooking_status, ['ready', 'served'], true))) {
+                    return false;
+                }
+
+                $components->where('cooking_status', 'ready')->each->update(['cooking_status' => 'served']);
+                $detail->update(['cooking_status' => 'served']);
+                return true;
+            }
+
+            if ($detail->cooking_status === 'ready' || (!$detail->requires_kitchen && !in_array($detail->cooking_status, ['served', 'cancelled'], true))) {
+                $detail->update(['cooking_status' => 'served']);
+                return true;
+            }
+
+            return false;
         });
 
         if (!$updated) {
@@ -1037,7 +1387,7 @@ class OrderCreateComponent extends Component
             ->orderBy('name', 'asc')
             ->paginate(5, ['*'], 'pageCustomers');
 
-        $products = Product::where('status', 1)
+        $products = Product::with('optionGroups.values')->where('status', 1)
             ->when($this->category_id, fn($q) => $q->where('category_id', $this->category_id))
             ->when($this->search, fn($q) => $q->where('name', 'like', '%' . $this->search . '%'))
             ->paginate(12, ['*'], 'pageProducts');

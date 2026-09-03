@@ -95,8 +95,8 @@
                 </li>
             @endcanany
 
-            {{-- MÓDULO: COCINA / CHEF (Cocina solo tiene ordenes.ver, pero lo limitamos a su rol o ruta específica si aplica) --}}
-            @role(['admin', 'cocinero'])
+            {{-- MÓDULO: PREPARACIÓN --}}
+            @if (Auth::user()->hasRole('admin') || Auth::user()->preparationStations()->exists())
                 @php
                     $isChefActive = request()->routeIs('orders.chef');
                 @endphp
@@ -112,12 +112,12 @@
                         <div class="ml-3 transition-all duration-200 overflow-hidden whitespace-nowrap"
                             :class="sidebarExpanded ? 'opacity-100 visible w-auto' : 'opacity-0 invisible w-0'">
                             <span class="text-sm {{ $isChefActive ? 'font-bold' : 'font-medium' }}">
-                                Cocina / Chef
+                                Preparación
                             </span>
                         </div>
                     </a>
                 </li>
-            @endrole
+            @endif
 
             @canany(['ordenes.cobrar', 'gastos.index'])
                 @php
@@ -263,7 +263,7 @@
             @canany(['usuarios.ver', 'roles.ver', 'empresa.editar', 'payment_methods.ver'])
                 @php
                     $activeConfig =
-                        request()->routeIs('users.*', 'settings.*', 'payment-methods.*') || request()->is('roles*');
+                        request()->routeIs('users.*', 'settings.*', 'payment-methods.*', 'preparation-stations.*') || request()->is('roles*');
                 @endphp
 
                 <li x-data="{ open: {{ $activeConfig ? 'true' : 'false' }} }">
@@ -304,6 +304,13 @@
                         @endcan
 
                         @can('empresa.editar')
+                            <li>
+                                <a href="{{ route('preparation-stations.index') }}"
+                                    class="flex items-center py-2 pl-6 text-sm rounded-r-lg transition-all
+                                    {{ request()->routeIs('preparation-stations.*') ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-slate-500 hover:text-orange-600' }}">
+                                    <i class="fa-solid fa-fire-burner mr-3 text-[10px]"></i> Estaciones
+                                </a>
+                            </li>
                             <li>
                                 <a href="{{ route('settings.index') }}"
                                     class="flex items-center py-2 pl-6 text-sm rounded-r-lg transition-all

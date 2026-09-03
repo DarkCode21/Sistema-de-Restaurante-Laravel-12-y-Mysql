@@ -49,4 +49,9 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    public function preparationStations()
+    {
+        return $this->belongsToMany(PreparationStation::class);
+    }
 }

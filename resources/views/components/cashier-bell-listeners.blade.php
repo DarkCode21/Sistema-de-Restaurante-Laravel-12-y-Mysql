@@ -1,12 +1,12 @@
 <script>
-    const registerWaiterBellListeners = () => {
-        if (window.__waiterBellListenersRegistered) {
+    const registerCashierBellListeners = () => {
+        if (window.__cashierBellListenersRegistered) {
             return;
         }
 
-        window.__waiterBellListenersRegistered = true;
-        let audioContext;
+        window.__cashierBellListenersRegistered = true;
         const bellEnabled = @js((bool) ($empresa->alert_sounds_enabled ?? true));
+        let audioContext;
         let toastTimeout;
 
         const activateAudio = async () => {
@@ -25,7 +25,7 @@
                 return;
             }
 
-            [988, 1319].forEach((frequency, index) => {
+            [740, 988].forEach((frequency, index) => {
                 const oscillator = audioContext.createOscillator();
                 const gain = audioContext.createGain();
                 const startAt = audioContext.currentTime + (index * 0.14);
@@ -47,15 +47,15 @@
             }
         }, { once: true });
 
-        Livewire.on('order-ready-for-service', (event) => {
-            const toast = document.querySelector('#waiter-ready-toast');
-            const message = document.querySelector('[data-waiter-ready-message]');
+        Livewire.on('order-ready-for-checkout', (event) => {
+            const toast = document.querySelector('#cashier-ready-toast');
+            const message = document.querySelector('[data-cashier-ready-message]');
 
             if (!toast || !message) {
                 return;
             }
 
-            message.textContent = `${event.tableName || 'Pedido'}: todos los platos de cocina están listos.`;
+            message.textContent = `${event.tableName || 'Pedido'} está listo para cobrar.`;
             toast.classList.remove('hidden');
             ringBell();
             clearTimeout(toastTimeout);
@@ -64,8 +64,8 @@
     };
 
     if (window.Livewire) {
-        registerWaiterBellListeners();
+        registerCashierBellListeners();
     } else {
-        document.addEventListener('livewire:init', registerWaiterBellListeners, { once: true });
+        document.addEventListener('livewire:init', registerCashierBellListeners, { once: true });
     }
 </script>

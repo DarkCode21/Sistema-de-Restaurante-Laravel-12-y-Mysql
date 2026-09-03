@@ -91,13 +91,12 @@ it('removes a served kitchen order from the active dispatch monitor', function (
         ->assertDontSee($detail->product->name);
 });
 
-it('renders kitchen alert controls enabled by default', function () {
+it('uses the administrator sound setting for kitchen alerts', function () {
     Livewire::test(OrdersChefComponent::class)
         ->assertSeeHtml('wire:poll.5s.keep-alive="refreshForAlerts"')
-        ->assertSeeHtml('data-alert-bell-toggle')
-        ->assertSeeHtml('aria-pressed="true"')
-        ->assertSeeHtml("Livewire.on('kitchen-order-received'")
-        ->assertSeeHtml('restaurant-kitchen-bell-enabled');
+        ->assertDontSeeHtml('data-alert-bell-toggle')
+        ->assertSeeHtml('const bellEnabled = true')
+        ->assertSeeHtml("Livewire.on('kitchen-order-received'");
 });
 
 it('marks every pending kitchen item in an order as ready', function () {

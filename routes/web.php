@@ -37,6 +37,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/payment-methods', [CrudController::class, 'paymentMethod'])->name('payment-methods.index')->middleware('can:payment_methods.ver');
     Route::get('/categories', [CrudController::class, 'category'])->name('categories.index')->middleware('can:categorias.ver');
     Route::get('/products', [CrudController::class, 'product'])->name('products.index')->middleware('can:productos.ver');
+    Route::get('/preparation-stations', [CrudController::class, 'preparationStation'])->name('preparation-stations.index')->middleware('can:empresa.editar');
 
     Route::get('/expenses', [ExpenseController::class, 'index'])->name('expenses.index')->middleware('can:gastos.ver');
     Route::get('/expenses/export/pdf', [ExpenseController::class, 'pdf'])->name('expenses.export.pdf')->middleware('can:gastos.reportes');
@@ -53,6 +54,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/orders/chef', [OrderController::class, 'chef'])->name('orders.chef');
     Route::get('/orders/cashier', [OrderController::class, 'cashier'])->name('orders.cashier')->middleware('can:ordenes.cobrar');
 
+    Route::get('/orders/new/{type}', [OrderController::class, 'createDirect'])->name('orders.new')->middleware('can:ordenes.crear');
+    Route::get('/orders/manage/{order}', [OrderController::class, 'manage'])->name('orders.manage')->middleware('can:ordenes.crear');
     Route::get('/orders/create/{id}', [OrderController::class, 'create'])->name('orders.create')->middleware('can:ordenes.crear');
     Route::get('/orders/ticket/{id}', [OrderController::class, 'ticket'])->name('orders.ticket')->middleware('can:ordenes.ver');
 
@@ -62,9 +65,4 @@ Route::middleware('auth')->group(function () {
     Route::get('/reports/sales/pdf', [SaleController::class, 'salesPdf'])->name('sales.report.pdf')->middleware('can:ventas.reportes');
     Route::get('/reports/sales/excel', [SaleController::class, 'salesExcel'])->name('sales.report.excel')->middleware('can:ventas.reportes');
 
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-});
-
-require __DIR__ . '/auth.php';
+    Route::get('/profile', [ProfileControl

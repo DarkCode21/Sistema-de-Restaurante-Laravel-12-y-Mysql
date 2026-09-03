@@ -62,7 +62,10 @@
                                         </div>
                                         <p
                                             class="text-sm font-bold text-slate-700 group-hover:text-orange-600 transition-colors">
-                                            {{ $product->name }}
+                                             {{ $product->name }}
+                                            @if ($product->is_combo)
+                                                <span class="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-violet-700">Combo</span>
+                                            @endif
                                         </p>
                                     </div>
                                 </td>
@@ -78,7 +81,7 @@
                                 <td class="px-8 py-5">
                                     <span
                                         class="text-sm font-bold {{ $product->stock <= 5 ? 'text-rose-600' : 'text-slate-600' }}">
-                                        {{ $product->stock }}
+                                        {{ $product->is_combo ? 'Por componentes' : $product->stock }}
                                     </span>
                                 </td>
                                 <td class="px-8 py-5">
@@ -208,6 +211,22 @@
                             @enderror
                         </div>
 
+                        @if ($requires_kitchen && !$is_combo)
+                            <div>
+                                <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Estación de preparación</label>
+                                <select wire:model="preparation_station_id"
+                                    class="w-full border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all mt-1">
+                                    <option value="">Seleccionar estación...</option>
+                                    @foreach ($stations as $station)
+                                        <option value="{{ $station->id }}">{{ $station->name }}</option>
+                                    @endforeach
+                                </select>
+                                @error('preparation_station_id')
+                                    <span class="text-red-500 text-[10px] font-bold mt-1 block">{{ $message }}</span>
+                                @enderror
+                            </div>
+                        @endif
+
                         <div>
                             <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Precio de
                                 Venta</label>
@@ -221,6 +240,7 @@
                             @enderror
                         </div>
 
+                        @if (!$is_combo)
                         <div>
                             <label
                                 class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Disponibilidad</label>
@@ -230,6 +250,7 @@
                                 <option value="0">Agotado</option>
                             </select>
                         </div>
+                        @endif
 
                         <div>
                             <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Porciones
@@ -244,24 +265,117 @@
                         <div class="md:col-span-2 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600">
+                                        <i class="fa-solid fa-layer-group"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="text-xs font-bold text-slate-700">Es un combo</h4>
+                                        <p class="text-[10px] text-slate-500">Se vende como una línea y se divide por componentes.</p>
+                                    </div>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" wire:model.live="is_combo" class="sr-only peer">
+                                    <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+                                </label>
+                            </div>
+                        </div>
+
+                        @if ($is_combo)
+                            <div class="md:col-span-2 space-y-3 rounded-2xl border border-violet-100 bg-violet-50/40 p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div>
+                                        <h4 class="text-xs font-bold text-slate-700">Componentes del combo</h4>
+                                        <p class="text-[10px] text-slate-500">Cada producto conserva su estación, stock y variantes.</p>
+                                    </div>
+                                    <button type="button" wire:click="addComponent" class="rounded-lg bg-violet-600 px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-violet-700">Añadir componente</button>
+                                </div>
+                                @foreach ($components as $componentIndex => $component)
+                                    <div wire:key="combo-component-{{ $componentIndex }}" class="grid grid-cols-[1fr_5rem_auto] gap-2">
+                                        <select wire:model="components.{{ $componentIndex }}.product_id" class="rounded-lg border-slate-200 px-3 py-2 text-xs">
+                                            <option value="">Producto...</option>
+                                            @foreach ($componentProducts as $componentProduct)
+                                                <option value="{{ $componentProduct->id }}">{{ $componentProduct->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        <input wire:model="components.{{ $componentIndex }}.quantity" type="number" min="1" class="rounded-lg border-slate-200 px-3 py-2 text-xs" aria-label="Cantidad">
+                                        <button type="button" wire:click="removeComponent({{ $componentIndex }})" class="px-2 text-rose-500"><i class="fa-solid fa-trash-can"></i></button>
+                                    </div>
+                                @endforeach
+                                @error('components') <span class="text-red-500 text-[10px] font-bold">{{ $message }}</span> @enderror
+                            </div>
+                        @endif
+
+                        @if (!$is_combo)
+                        <div class="md:col-span-2 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3">
                                     <div
                                         class="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600">
                                         <i class="fa-solid fa-fire-burner"></i>
                                     </div>
                                     <div>
-                                        <h4 class="text-xs font-bold text-slate-700">Preparación en Cocina</h4>
-                                        <p class="text-[10px] text-slate-500">¿Este producto requiere orden de
-                                            preparación?</p>
+                                        <h4 class="text-xs font-bold text-slate-700">Requiere preparación</h4>
+                                        <p class="text-[10px] text-slate-500">Envía el producto a una estación de preparación.</p>
                                     </div>
                                 </div>
                                 <label class="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" wire:model="requires_kitchen" class="sr-only peer">
+                                    <input type="checkbox" wire:model.live="requires_kitchen" class="sr-only peer">
                                     <div
                                         class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600">
                                     </div>
                                 </label>
                             </div>
                         </div>
+
+                        @endif
+
+                        @if (!$is_combo)
+                        <div class="md:col-span-2 space-y-3 border border-slate-100 rounded-2xl p-4">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <h4 class="text-xs font-bold text-slate-700">Variantes y preferencias</h4>
+                                    <p class="text-[10px] text-slate-500">Ej.: término de cocción, tamaño de jarra o extras.</p>
+                                </div>
+                                <button type="button" wire:click="addOptionGroup"
+                                    class="rounded-lg bg-slate-100 px-3 py-2 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-200">
+                                    Añadir opción
+                                </button>
+                            </div>
+
+                            @foreach ($option_groups as $groupIndex => $group)
+                                <div wire:key="option-group-{{ $groupIndex }}" class="space-y-2 rounded-xl bg-slate-50 p-3">
+                                    <div class="flex items-center gap-2">
+                                        <input wire:model="option_groups.{{ $groupIndex }}.name" type="text" placeholder="Ej.: Término"
+                                            class="min-w-0 flex-1 rounded-lg border-slate-200 px-3 py-2 text-xs">
+                                        <label class="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                                            <input wire:model="option_groups.{{ $groupIndex }}.required" type="checkbox" class="rounded border-slate-300 text-orange-600">
+                                            Obligatoria
+                                        </label>
+                                        <button type="button" wire:click="removeOptionGroup({{ $groupIndex }})" class="text-rose-500">
+                                            <i class="fa-solid fa-trash-can"></i>
+                                        </button>
+                                    </div>
+
+                                    @foreach ($group['values'] as $valueIndex => $value)
+                                        <div wire:key="option-value-{{ $groupIndex }}-{{ $valueIndex }}" class="grid grid-cols-[1fr_7rem_auto] gap-2">
+                                            <input wire:model="option_groups.{{ $groupIndex }}.values.{{ $valueIndex }}.name" type="text" placeholder="Ej.: Medio"
+                                                class="rounded-lg border-slate-200 px-3 py-2 text-xs">
+                                            <input wire:model="option_groups.{{ $groupIndex }}.values.{{ $valueIndex }}.price_adjustment" type="number" step="0.01" placeholder="Ajuste S/"
+                                                class="rounded-lg border-slate-200 px-3 py-2 text-xs">
+                                            <button type="button" wire:click="removeOptionValue({{ $groupIndex }}, {{ $valueIndex }})" class="px-2 text-rose-500">
+                                                <i class="fa-solid fa-xmark"></i>
+                                            </button>
+                                        </div>
+                                    @endforeach
+
+                                    <button type="button" wire:click="addOptionValue({{ $groupIndex }})"
+                                        class="text-[10px] font-black uppercase text-orange-600 hover:text-orange-700">
+                                        + Valor
+                                    </button>
+                                </div>
+                            @endforeach
+                        </div>
+                        @endif
 
                     </div>
 

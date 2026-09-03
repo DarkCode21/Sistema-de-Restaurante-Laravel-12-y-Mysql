@@ -10,13 +10,6 @@
                         class="w-full bg-white border border-slate-200 py-2 pl-10 pr-4 rounded-lg text-sm outline-none focus:border-orange-500 transition-all">
                 </div>
 
-                <button type="button" wire:ignore data-waiter-bell-toggle
-                    class="w-10 sm:w-auto sm:px-4 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                    title="Silenciar campana" aria-label="Campana de avisos" aria-pressed="true">
-                    <i class="fa-solid fa-bell"></i>
-                    <span class="hidden sm:inline" data-waiter-bell-label>Silenciar campana</span>
-                </button>
-
                 <button type="button" onclick="toggleRestaurantFullscreen()" data-fullscreen-toggle
                     class="w-10 sm:w-auto sm:px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                     title="Pantalla completa" aria-label="Pantalla completa">
@@ -189,12 +182,17 @@
 
                                 <div class="flex-1 min-w-0">
                                     <div class="flex justify-between items-start mb-1">
-                                        <div class="flex-1">
-                                            <h4
-                                                class="text-sm font-black text-slate-800 truncate tracking-tight uppercase">
-                                                {{ $item['name'] }}
-                                            </h4>
-                                        </div>
+                                         <div class="flex-1">
+                                             <h4
+                                                 class="text-sm font-black text-slate-800 truncate tracking-tight uppercase">
+                                                 {{ $item['name'] }}
+                                             </h4>
+                                            @if (!empty($item['selected_options']))
+                                                <p class="mt-1 text-[10px] font-bold text-orange-600">
+                                                    {{ collect($item['selected_options'])->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}
+                                                </p>
+                                            @endif
+                                         </div>
                                         <div class="text-right ml-2">
                                             <p class="text-sm font-black text-slate-900 tracking-tighter">
                                                 {{ $empresa->currency_simbol }}{{ number_format($item['subtotal'], 2) }}
@@ -384,6 +382,58 @@
                 </div>
 
             </div>
+        </div>
+    @endif
+
+    @if ($isOpenProductOptions)
+        <div class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+            <form wire:submit="confirmProductOptions" class="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl">
+                <div class="border-b border-slate-100 bg-slate-50 px-6 py-5">
+                    <h3 class="text-lg font-black text-slate-800">Configurar {{ $configuringProduct['name'] }}</h3>
+                    <p class="text-xs font-semibold text-slate-500">Selecciona las preferencias del cliente.</p>
+                </div>
+
+                <div class="max-h-[60vh] space-y-5 overflow-y-auto p-6">
+                    @foreach ($configuringProduct['option_groups'] as $group)
+                        <fieldset wire:key="order-option-group-{{ $group['id'] }}" class="space-y-2">
+                            <legend class="text-xs font-black uppercase tracking-wide text-slate-600">
+                                {{ $group['name'] }}{{ $group['required'] ? ' *' : '' }}
+                            </legend>
+
+                            @unless ($group['required'])
+                                <label class="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-500">
+                                    <input wire:model="selectedOptionValueIds.{{ $group['id'] }}" type="radio" value="" class="text-orange-600">
+                                    Sin preferencia
+                                </label>
+                            @endunless
+
+                            @foreach ($group['values'] as $value)
+                                <label class="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50">
+                                    <span class="flex items-center gap-3">
+                                        <input wire:model="selectedOptionValueIds.{{ $group['id'] }}" type="radio" value="{{ $value['id'] }}" class="text-orange-600">
+                                        {{ $value['name'] }}
+                                    </span>
+                                    @if ($value['price_adjustment'] != 0)
+                                        <span class="text-xs font-black text-orange-600">
+                                            {{ $value['price_adjustment'] > 0 ? '+' : '' }}{{ $empresa->currency_simbol }}{{ number_format($value['price_adjustment'], 2) }}
+                                        </span>
+                                    @endif
+                                </label>
+                            @endforeach
+                        </fieldset>
+                    @endforeach
+                </div>
+
+                <div class="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
+                    <button type="button" wire:click="$set('isOpenProductOptions', false)"
+                        class="rounded-xl px-4 py-2 text-xs font-black uppercase text-slate-500 hover:bg-slate-200">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="rounded-xl bg-orange-600 px-5 py-2 text-xs font-black uppercase text-white hover:bg-orange-700">
+                        Añadir al pedido
+                    </button>
+                </div>
+            </form>
         </div>
     @endif
 

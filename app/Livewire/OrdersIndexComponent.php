@@ -60,16 +60,40 @@ class OrdersIndexComponent extends Component
 
     public function markDetailAsServed($detailId): void
     {
-        $updated = OrderDetail::query()
-            ->whereKey($detailId)
-            ->where(function ($query) {
-                $query->where('cooking_status', 'ready')
-                    ->orWhere(fn ($query) => $query
-                        ->where('requires_kitchen', false)
-                        ->whereNotIn('cooking_status', ['served', 'cancelled']));
-            })
-            ->whereHas('order', fn ($query) => $query->where('status', 'abierto'))
-            ->update(['cooking_status' => 'served']);
+        $updated = DB::transaction(function () use ($detailId) {
+            $detail = OrderDetail::query()
+                ->whereKey($detailId)
+                ->whereHas('order', fn ($query) => $query->where('status', 'abierto'))
+                ->lockForUpdate()
+                ->first();
+
+            if (!$detail) {
+                return false;
+            }
+
+            $components = OrderDetail::query()
+                ->where('parent_detail_id', $detail->id)
+                ->lockForUpdate()
+                ->get();
+
+            if ($components->isNotEmpty()) {
+                if ($components->where('requires_kitchen', true)
+                    ->contains(fn (OrderDetail $component) => !in_array($component->cooking_status, ['ready', 'served'], true))) {
+                    return false;
+                }
+
+                $components->where('cooking_status', 'ready')->each->update(['cooking_status' => 'served']);
+                $detail->update(['cooking_status' => 'served']);
+                return true;
+            }
+
+            if ($detail->cooking_status === 'ready' || (!$detail->requires_kitchen && !in_array($detail->cooking_status, ['served', 'cancelled'], true))) {
+                $detail->update(['cooking_status' => 'served']);
+                return true;
+            }
+
+            return false;
+        });
 
         if ($updated !== 1) {
             $this->dispatch('swal', [
@@ -211,8 +235,9 @@ class OrdersIndexComponent extends Component
         $orders = Order::with([
             'table',
             'details' => function ($q) {
-                $q->where('cooking_status', '!=', 'cancelled')
-                    ->with('product');
+                $q->whereNull('parent_detail_id')
+                    ->where('cooking_status', '!=', 'cancelled')
+                    ->with(['product', 'components']);
             },
             'user'
         ])

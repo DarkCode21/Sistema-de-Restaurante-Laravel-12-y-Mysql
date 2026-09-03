@@ -1,4 +1,4 @@
-<div class="p-6 bg-[#fcfcfc] min-h-screen font-sans text-slate-900 antialiased">
+<div wire:poll.5s.keep-alive="refreshReadyOrderAlerts" class="p-6 bg-[#fcfcfc] min-h-screen font-sans text-slate-900 antialiased">
     <div class="mx-auto">
 
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -35,6 +35,9 @@
 
                     <div class="p-4 flex-1 space-y-5 max-h-[400px] overflow-y-auto custom-scrollbar">
                         @foreach ($order->details as $detail)
+                            @php
+                                $serviceStatus = $detail->service_status;
+                            @endphp
                             <div class="flex items-center gap-2 mt-1">
                                 <label class="relative inline-flex items-center cursor-pointer scale-75 origin-left">
                                     <input type="checkbox" wire:model.live="selectedDetails.{{ $order->id }}.{{ $detail->id }}"
@@ -49,11 +52,11 @@
                             <div
                                 class="group relative bg-white p-3 pt-5 rounded-2xl border border-slate-100 shadow-sm transition-all">
                                 <div class="absolute -top-2.5 left-3">
-                                    @if ($detail->cooking_status === 'in_progress')
+                                    @if ($serviceStatus === 'in_progress')
                                         <span
                                             class="bg-cyan-500 text-white text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest shadow-sm animate-pulse">En
                                             proceso</span>
-                                    @elseif($detail->cooking_status === 'ready')
+                                    @elseif($serviceStatus === 'ready')
                                         <span
                                             class="bg-emerald-500 text-white text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest shadow-sm">Listo</span>
                                     @else
@@ -73,6 +76,11 @@
                                                 class="text-sm font-black text-slate-800 uppercase leading-snug break-words">
                                                 {{ $detail->product->name }}
                                             </p>
+                                            @if (!empty($detail->selected_options))
+                                                <p class="mt-1 text-[10px] font-black text-orange-600">
+                                                    {{ collect($detail->selected_options)->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}
+                                                </p>
+                                            @endif
                                             @if ($detail->notes)
                                                 <p
                                                     class="text-[10px] text-orange-500 font-bold italic mt-1 leading-tight uppercase bg-orange-50/50 p-1 rounded-lg">
@@ -383,7 +391,21 @@
             </div>
         </div>
     @endif
+
+    <div id="cashier-ready-toast" class="fixed right-4 top-4 z-[120] hidden max-w-sm rounded-2xl border border-emerald-200 bg-white p-4 shadow-xl" role="status" aria-live="polite">
+        <div class="flex items-start gap-3">
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+                <i class="fa-solid fa-cash-register"></i>
+            </span>
+            <div>
+                <p class="text-sm font-black text-slate-800">Pedido listo para cobrar</p>
+                <p class="text-xs font-semibold text-slate-500" data-cashier-ready-message></p>
+            </div>
+        </div>
+    </div>
 </div>
+
+<x-cashier-bell-listeners />
 
 <script>
     document.addEventListener('livewire:init', function() {

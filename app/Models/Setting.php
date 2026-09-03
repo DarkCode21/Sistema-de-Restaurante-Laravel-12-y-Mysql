@@ -19,6 +19,7 @@ class Setting extends Model
         'timezone',
         'direct_printing',
         'separate_orders',
+        'alert_sounds_enabled',
         'printer_name',
         'kitchen_printer_name',
         'social_networks',
@@ -28,6 +29,7 @@ class Setting extends Model
         'social_networks' => 'array',
         'direct_printing' => 'boolean',
         'separate_orders' => 'boolean',
+        'alert_sounds_enabled' => 'boolean',
     ];
 
     /**

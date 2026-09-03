@@ -73,7 +73,12 @@
         <tbody>
             @foreach ($sale->details as $item)
                 <tr>
-                    <td>{{ $item->product->name }}</td>
+                    <td>
+                        {{ $item->product->name }}
+                        @if (!empty($item->selected_options))
+                            <br><small>{{ collect($item->selected_options)->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}</small>
+                        @endif
+                    </td>
                     <td class="text-right">{{ $item->quantity }}</td>
                     <td class="text-right">{{ number_format($item->price * $item->quantity, 2) }}</td>
                 </tr>

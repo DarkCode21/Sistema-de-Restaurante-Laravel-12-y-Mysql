@@ -31,7 +31,7 @@ class OrderController extends Controller
 
     public function chef()
     {
-        if (!Auth::user()->hasAnyRole(['admin', 'cocinero'])) {
+        if (!Auth::user()->hasRole('admin') && !Auth::user()->preparationStations()->exists()) {
             abort(403, 'No tienes permiso para acceder a la cocina.');
         }
 

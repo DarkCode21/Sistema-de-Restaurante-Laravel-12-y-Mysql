@@ -13,8 +13,11 @@ class SaleDetail extends Model
         'price',
         'tax',
         'subtotal',
-        'notes'
+        'notes',
+        'selected_options',
     ];
+
+    protected $casts = ['selected_options' => 'array'];
 
     public function sale()
     {

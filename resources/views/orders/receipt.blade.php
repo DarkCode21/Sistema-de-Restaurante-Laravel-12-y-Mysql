@@ -163,10 +163,14 @@
                         $name = $isCorrection ? $item->product_name : $item->product->name;
                         $quantity = $item->quantity;
                         $notes = $item->notes;
+                        $selectedOptions = $item->selected_options ?? [];
                     @endphp
                     <tr>
                         <td style="width: 75%;">
                             {{ $name }}
+                            @if ($selectedOptions)
+                                <br><small>{{ collect($selectedOptions)->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}</small>
+                            @endif
                             @if ($notes)
                                 <br><small><strong>NOTA:</strong> {{ $notes }}</small>
                             @elseif ($isCorrection && $item->action !== 'cancel')

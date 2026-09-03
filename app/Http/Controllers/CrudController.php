@@ -23,4 +23,8 @@ class CrudController extends Controller
         
         return view('products.index');
     }
+
+    public function preparationStation() {
+        return view('preparation-stations.index');
+    }
 }

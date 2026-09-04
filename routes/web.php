@@ -6,6 +6,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\SettingController;
@@ -51,6 +52,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/tables', [CrudController::class, 'table'])->name('tables.index')->middleware('can:mesas.ver');
     Route::view('/restaurant-layout', 'restaurant-layout.index')->name('restaurant-layout.index')->middleware('can:empresa.editar');
     Route::get('/ingredients', [CrudController::class, 'ingredient'])->name('ingredients.index')->middleware('can:productos.ver');
+    Route::get('/purchases', [PurchaseController::class, 'index'])->name('purchases.index')->middleware('can:productos.editar');
     Route::get('/promotions', [CrudController::class, 'promotion'])->name('promotions.index')->middleware('can:productos.ver');
 
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index')->middleware('can:ordenes.ver');
@@ -70,6 +72,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/reports/sales/excel', [SaleController::class, 'salesExcel'])->name('sales.report.excel')->middleware('can:ventas.reportes');
 
     Route::get('/reports/promotions', [ReportController::class, 'promotions'])->name('reports.promotions')->middleware('can:ventas.reportes');
+    Route::get('/reports/profit', [ReportController::class, 'profit'])->name('reports.profit')->middleware('can:ventas.reportes');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

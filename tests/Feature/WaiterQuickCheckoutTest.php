@@ -175,7 +175,7 @@ it('opens quick checkout for a served table and frees it only after full payment
         'cooking_status' => 'served',
     ]);
 
-    Livewire::withQueryParams(['order' => $order->id, 'quick_checkout' => 1])
+    Livewire::actingAs($user)->withQueryParams(['order' => $order->id, 'quick_checkout' => 1])
         ->test(OrdersCashierComponent::class)
         ->assertSet('showPaymentModal', true)
         ->assertSet('order.id', $order->id)

@@ -23,9 +23,11 @@
                     <tr>
                         <td class="px-5 py-4 font-bold text-slate-700">{{ $station->name }}</td>
                         <td class="px-5 py-4 text-slate-500">{{ $station->users->pluck('name')->join(', ') ?: 'Sin personal asignado' }}</td>
-                        <td class="px-5 py-4 text-right">
-                            <button wire:click="edit({{ $station->id }})" class="mr-2 text-amber-600"><i class="fa-solid fa-pen"></i></button>
-                            <button wire:click="deleteConfirm({{ $station->id }})" class="text-rose-600"><i class="fa-solid fa-trash-can"></i></button>
+                        <td class="px-5 py-4">
+                            <div class="flex justify-end gap-2">
+                                <button wire:click="edit({{ $station->id }})" class="w-9 h-9 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-amber-600 hover:border-amber-200 transition-all border border-slate-200 shadow-sm"><i class="fa-solid fa-pen text-[10px]"></i></button>
+                                <button wire:click="deleteConfirm({{ $station->id }})" class="w-9 h-9 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-rose-600 hover:border-rose-200 transition-all border border-slate-200 shadow-sm"><i class="fa-solid fa-trash-can text-[10px]"></i></button>
+                            </div>
                         </td>
                     </tr>
                 @empty

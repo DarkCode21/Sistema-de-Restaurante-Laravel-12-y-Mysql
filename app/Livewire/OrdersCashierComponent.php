@@ -47,7 +47,11 @@ class OrdersCashierComponent extends Component
         $this->printer_name = $setting->printer_name;
         $this->direct_printing = $setting->direct_printing;
         $this->paymentMethods = PaymentMethod::all();
-        $this->boxes = CashRegister::where('status', 'open')->get();
+        $this->boxes = CashRegister::query()
+            ->with(['terminal', 'opener'])
+            ->where('status', 'open')
+            ->where('opened_by', auth()->id())
+            ->get();
         $this->boxId = $this->boxes->count() === 1 ? $this->boxes->first()->id : null;
         $this->quickCheckout = request()->boolean('quick_checkout');
         $this->knownReadyOrderIds = $this->readyOrders()->pluck('id')->map(fn ($id) => (int) $id)->all();
@@ -279,6 +283,35 @@ class OrdersCashierComponent extends Component
         $this->showPaymentModal = true;
     }
 
+    private function detailCost(OrderDetail $detail): ?float
+    {
+        $cost = 0.0;
+        $items = $detail->components->isNotEmpty() ? $detail->components : collect([$detail]);
+
+        foreach ($items as $item) {
+            if ($item->ingredientUsages->isNotEmpty()) {
+                foreach ($item->ingredientUsages as $usage) {
+                    $unitCost = $usage->unit_cost ?? $usage->ingredient?->unit_cost;
+                    if ($unitCost === null) {
+                        return null;
+                    }
+
+                    $cost += (float) $usage->quantity * (float) $unitCost;
+                }
+
+                continue;
+            }
+
+            if ($item->product?->recipeIngredients->isNotEmpty() || $item->product?->cost === null) {
+                return null;
+            }
+
+            $cost += (float) $item->quantity * (float) $item->product->cost;
+        }
+
+        return round($cost, 2);
+    }
+
     public function processPayment(): void
     {
         if (!$this->order) {
@@ -398,7 +431,12 @@ class OrdersCashierComponent extends Component
                 $payingInAdvance = !$order->isReadyForCheckout();
 
                 $details = OrderDetail::query()
-                    ->with('product')
+                    ->with([
+                        'product.recipeIngredients',
+                        'ingredientUsages.ingredient',
+                        'components.product.recipeIngredients',
+                        'components.ingredientUsages.ingredient',
+                    ])
                     ->where('order_id', $order->id)
                     ->whereNull('parent_detail_id')
                     ->whereIn('id', $detailIds)
@@ -420,21 +458,19 @@ class OrdersCashierComponent extends Component
                     throw new \RuntimeException('Uno de los métodos de pago no está disponible.');
                 }
 
-                $cashRegister = null;
-                if ($methods->contains(fn (PaymentMethod $method) => $method->is_efectivo)) {
-                    if (!$this->boxId) {
-                        throw new \RuntimeException('Selecciona una caja abierta para recibir efectivo.');
-                    }
+                if (!$this->boxId) {
+                    throw new \RuntimeException('Abre o selecciona tu turno de caja antes de cobrar.');
+                }
 
-                    $cashRegister = CashRegister::query()
-                        ->whereKey($this->boxId)
-                        ->where('status', 'open')
-                        ->lockForUpdate()
-                        ->first();
+                $cashRegister = CashRegister::query()
+                    ->whereKey($this->boxId)
+                    ->where('status', 'open')
+                    ->where('opened_by', auth()->id())
+                    ->lockForUpdate()
+                    ->first();
 
-                    if (!$cashRegister) {
-                        throw new \RuntimeException('La caja ya no está disponible.');
-                    }
+                if (!$cashRegister) {
+                    throw new \RuntimeException('El turno seleccionado no está disponible para este usuario.');
                 }
 
                 $rawSubtotal = (float) $details->sum('subtotal');
@@ -464,7 +500,7 @@ class OrdersCashierComponent extends Component
                 $sale = Sale::create([
                     'order_id' => $order->id,
                     'customer_name' => $order->customer_name ?: 'Consumidor Final',
-                    'cash_register_id' => $cashRegister?->id,
+                    'cash_register_id' => $cashRegister->id,
                     'subtotal' => $subtotal,
                     'tax' => $tax,
                     'manual_discount' => $manualDiscount,
@@ -478,11 +514,21 @@ class OrdersCashierComponent extends Component
                 ]);
 
                 foreach ($details as $detail) {
+                    $costTotal = $this->detailCost($detail);
+                    $netRevenue = $rawSubtotal > 0
+                        ? round((float) $detail->subtotal * ($subtotal / $rawSubtotal), 2)
+                        : 0;
+
                     $sale->details()->create([
                         'product_id' => $detail->product_id,
                         'product_name' => $detail->product?->name,
                         'quantity' => $detail->quantity,
                         'price' => $detail->price,
+                        'unit_cost' => $costTotal === null || (float) $detail->quantity === 0
+                            ? null
+                            : round($costTotal / (float) $detail->quantity, 4),
+                        'cost_total' => $costTotal,
+                        'gross_profit' => $costTotal === null ? null : round($netRevenue - $costTotal, 2),
                         'discount' => (float) $detail->discount,
                         'tax_rate' => (float) $detail->tax_rate,
                         'tax' => $detail->tax,

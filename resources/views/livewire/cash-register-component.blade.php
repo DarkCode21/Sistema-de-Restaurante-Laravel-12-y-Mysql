@@ -4,8 +4,8 @@
         {{-- HEADER --}}
         <div class="flex flex-col md:flex-row gap-4 items-center justify-between mb-2">
             <div>
-                <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">Cajas de Efectivo</h1>
-                <p class="text-slate-500 text-xs font-medium">Control de aperturas, cierres y flujos de efectivo</p>
+                <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">Turnos de Caja</h1>
+                <p class="text-slate-500 text-xs font-medium">Cada turno pertenece a un cajero y una caja física.</p>
             </div>
 
             <div class="flex w-full md:w-auto gap-3">
@@ -18,7 +18,7 @@
                 @can('cajas.crear')
                     <button wire:click="create"
                         class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 active:scale-95 shadow-md shadow-blue-100">
-                        <i class="fa-solid fa-cash-register"></i> Abrir Caja
+                        <i class="fa-solid fa-cash-register"></i> Abrir Turno
                     </button>
                 @endcan
             </div>
@@ -28,7 +28,7 @@
         <div class="bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-sm">
 
             <div class="px-8 py-6 border-b border-slate-100 bg-white">
-                <h4 class="text-slate-800 font-bold text-lg">Historial de Cajas</h4>
+                <h4 class="text-slate-800 font-bold text-lg">Historial de Turnos</h4>
                 <p class="text-slate-400 text-[10px] uppercase tracking-widest mt-1 font-semibold">Registro de
                     movimientos de tesorería</p>
             </div>
@@ -37,7 +37,7 @@
                 <table class="w-full text-left border-collapse">
                     <thead>
                         <tr class="text-slate-400 text-[10px] uppercase tracking-[0.15em] bg-slate-50/50">
-                            <th class="px-8 py-5 font-bold">Caja / Responsable</th>
+                            <th class="px-8 py-5 font-bold">Caja / Cajero</th>
                             <th class="px-8 py-5 font-bold text-center">Estado</th>
                             <th class="px-8 py-5 font-bold">Monto Apertura</th>
                             <th class="px-8 py-5 font-bold">Saldo Actual</th>
@@ -92,16 +92,16 @@
                                             @can('cajas.editar')
                                                 {{-- ACCIONES PARA CAJA ABIERTA --}}
                                                 <button wire:click="edit({{ $reg->id }})"
-                                                    class="w-9 h-9 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all border border-slate-200 shadow-sm"
+                                                    class="w-9 h-9 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-amber-600 hover:border-amber-200 transition-all border border-slate-200 shadow-sm"
                                                     title="Editar apertura">
-                                                    <i class="fa-solid fa-pen-to-square text-[10px]"></i>
+                                                    <i class="fa-solid fa-pen text-[10px]"></i>
                                                 </button>
                                             @endcan
                                             @can('cajas.eliminar')
                                                 <button wire:click="deleteConfirm({{ $reg->id }})"
                                                     class="w-9 h-9 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-rose-600 hover:border-rose-200 transition-all border border-slate-200 shadow-sm"
                                                     title="Eliminar registro">
-                                                    <i class="fa-solid fa-trash text-[10px]"></i>
+                                                    <i class="fa-solid fa-trash-can text-[10px]"></i>
                                                 </button>
                                             @endcan
                                         @endif
@@ -139,7 +139,7 @@
                 <!-- Cabecera del Modal -->
                 <div class="px-8 py-6 bg-slate-50 border-b">
                     <h3 class="text-lg font-black text-slate-800">
-                        {{ $cash_register_id ? 'Editar Apertura' : 'Apertura de Caja' }}
+                        {{ $cash_register_id ? 'Editar Turno' : 'Apertura de Turno' }}
                     </h3>
                     <p class="text-xs text-slate-500 font-medium">Complete la información para continuar</p>
                 </div>
@@ -214,7 +214,7 @@
                         <button type="submit"
                             class="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl shadow-lg shadow-orange-500/30 transition-all active:scale-95">
                             <i class="fa-solid fa-floppy-disk mr-2"></i>
-                            {{ $cash_register_id ? 'Actualizar' : 'Confirmar Apertura' }}
+                        {{ $cash_register_id ? 'Actualizar' : 'Confirmar Turno' }}
                         </button>
                     </div>
                 </form>

@@ -12,6 +12,9 @@ class SaleDetail extends Model
         'product_name',
         'quantity',
         'price',
+        'unit_cost',
+        'cost_total',
+        'gross_profit',
         'discount',
         'tax',
         'tax_rate',
@@ -21,7 +24,12 @@ class SaleDetail extends Model
         'selected_options',
     ];
 
-    protected $casts = ['selected_options' => 'array'];
+    protected $casts = [
+        'selected_options' => 'array',
+        'unit_cost' => 'decimal:4',
+        'cost_total' => 'decimal:2',
+        'gross_profit' => 'decimal:2',
+    ];
 
     public function sale()
     {

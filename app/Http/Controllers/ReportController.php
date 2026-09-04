@@ -6,6 +6,9 @@ use App\Models\Transaction;
 use App\Models\Category;
 use App\Models\PaymentMethod;
 use App\Models\Promotion;
+use App\Models\Expense;
+use App\Models\Ingredient;
+use App\Models\Sale;
 use App\Models\SaleDetail;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
@@ -162,5 +165,47 @@ class ReportController extends Controller
         }
 
         return view('reports.promotions', compact('promotions', 'totals', 'start_date', 'end_date'));
+    }
+
+    public function profit(Request $request)
+    {
+        $start_date = $request->start_date ?? now()->startOfMonth()->format('Y-m-d');
+        $end_date = $request->end_date ?? now()->format('Y-m-d');
+
+        $details = SaleDetail::query()->whereHas('sale', function ($query) use ($start_date, $end_date) {
+            $query->whereDate('paid_at', '>=', $start_date)
+                ->whereDate('paid_at', '<=', $end_date);
+        });
+        $costedDetails = (clone $details)->whereNotNull('cost_total');
+        $costSummary = (clone $costedDetails)->selectRaw('COUNT(*) as line_count, COALESCE(SUM(cost_total), 0) as cost, COALESCE(SUM(gross_profit), 0) as gross_profit')->first();
+        $sales = Sale::query()
+            ->whereDate('paid_at', '>=', $start_date)
+            ->whereDate('paid_at', '<=', $end_date)
+            ->sum('subtotal');
+        $expenses = Expense::query()
+            ->whereDate('expense_date', '>=', $start_date)
+            ->whereDate('expense_date', '<=', $end_date)
+            ->sum('amount');
+        $products = (clone $costedDetails)
+            ->selectRaw('product_id, product_name, SUM(quantity) as quantity, SUM(cost_total) as cost, SUM(gross_profit) as gross_profit')
+            ->groupBy('product_id', 'product_name')
+            ->orderByDesc('gross_profit')
+            ->get();
+        $lowStockIngredients = Ingredient::query()
+            ->whereColumn('stock', '<=', 'minimum_stock')
+            ->orderBy('name')
+            ->get();
+
+        $totals = [
+            'sales' => (float) $sales,
+            'cost' => (float) $costSummary->cost,
+            'gross_profit' => (float) $costSummary->gross_profit,
+            'expenses' => (float) $expenses,
+            'net_profit' => (float) $costSummary->gross_profit - (float) $expenses,
+            'costed_lines' => (int) $costSummary->line_count,
+            'missing_cost_lines' => (clone $details)->whereNull('cost_total')->count(),
+        ];
+
+        return view('reports.profit', compact('start_date', 'end_date', 'products', 'lowStockIngredients', 'totals'));
     }
 }

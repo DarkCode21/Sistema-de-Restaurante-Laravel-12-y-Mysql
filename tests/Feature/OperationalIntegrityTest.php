@@ -102,9 +102,17 @@ it('rejects split-payment details from another order', function () {
         ->assertDispatched('swal');
 });
 
-it('processes card payments without opening a physical cash register', function () {
+it('records card payments in the cashier shift without changing physical cash', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
     $user = User::factory()->create();
+    $cashRegister = CashRegister::create([
+        'name' => 'Turno tarjeta',
+        'opening_amount' => 100,
+        'current_amount' => 100,
+        'status' => 'open',
+        'opened_by' => $user->id,
+        'opened_at' => now(),
+    ]);
     $card = PaymentMethod::create(['name' => 'Tarjeta', 'is_efectivo' => false]);
     $category = Category::create(['name' => 'Bebidas']);
     $product = Product::create([
@@ -118,7 +126,7 @@ it('processes card payments without opening a physical cash register', function 
     ]);
     [, $order] = makeOperationalOrder($user, $product, 'Mesa tarjeta');
 
-    Livewire::test(OrdersCashierComponent::class)
+    Livewire::actingAs($user)->test(OrdersCashierComponent::class)
         ->call('openFullPayment', $order->id)
         ->set('payments', [[
             'method_id' => $card->id,
@@ -129,12 +137,13 @@ it('processes card payments without opening a physical cash register', function 
 
     expect($order->refresh()->status)->toBe('cerrado')
         ->and(Sale::where('order_id', $order->id)->count())->toBe(1)
-        ->and(Sale::where('order_id', $order->id)->value('cash_register_id'))->toBeNull()
+        ->and(Sale::where('order_id', $order->id)->value('cash_register_id'))->toBe($cashRegister->id)
+        ->and((float) $cashRegister->refresh()->current_amount)->toBe(100.0)
         ->and(Sale::where('order_id', $order->id)->first()->payments->first()->received_amount)->toBeNull()
         ->and(Sale::where('order_id', $order->id)->first()->payments->first()->returned_amount)->toBeNull();
 });
 
-it('requires an open cash register only when receiving cash', function () {
+it('requires an open cashier shift for every payment method', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
     $user = User::factory()->create();
     $cash = PaymentMethod::create(['name' => 'Efectivo', 'is_efectivo' => true]);
@@ -150,7 +159,7 @@ it('requires an open cash register only when receiving cash', function () {
     ]);
     [, $order] = makeOperationalOrder($user, $product, 'Mesa sin caja');
 
-    Livewire::test(OrdersCashierComponent::class)
+    Livewire::actingAs($user)->test(OrdersCashierComponent::class)
         ->call('openFullPayment', $order->id)
         ->set('payments', [[
             'method_id' => $cash->id,
@@ -206,7 +215,7 @@ it('allows advance payment and closes the table after service', function () {
     [$table, $order, $detail] = makeOperationalOrder($user, $product, 'Mesa en cocina');
     $detail->update(['cooking_status' => 'in_progress', 'is_printed' => true]);
 
-    Livewire::test(OrdersCashierComponent::class)
+    Livewire::actingAs($user)->test(OrdersCashierComponent::class)
         ->call('openFullPayment', $order->id)
         ->assertSet('showPaymentModal', true)
         ->set('boxId', $cashRegister->id)
@@ -266,6 +275,52 @@ it('closes an open cash register with an authorized user', function () {
         ->and($cashRegister->closed_at)->not->toBeNull()
         ->and((float) $cashRegister->closing_amount)->toBe(120.0)
         ->and((float) $cashRegister->difference)->toBe(-5.0);
+});
+
+it('reconciles digital payments independently from physical cash at close', function () {
+    $user = User::factory()->create();
+    $user->givePermissionTo(Permission::findOrCreate('cajas.cerrar'));
+    $cashRegister = CashRegister::create([
+        'name' => 'Turno conciliado',
+        'opening_amount' => 100,
+        'current_amount' => 120,
+        'status' => 'open',
+        'opened_by' => $user->id,
+        'opened_at' => now(),
+    ]);
+    $cash = PaymentMethod::create(['name' => 'Efectivo', 'is_efectivo' => true]);
+    $yape = PaymentMethod::create(['name' => 'Yape', 'is_efectivo' => false]);
+    $order = Order::create(['user_id' => $user->id, 'status' => 'cerrado', 'total' => 50, 'amount_pending' => 0]);
+    $sale = Sale::create([
+        'order_id' => $order->id,
+        'cash_register_id' => $cashRegister->id,
+        'customer_name' => 'Consumidor Final',
+        'subtotal' => 50,
+        'tax' => 0,
+        'tip' => 0,
+        'total' => 50,
+        'paid_amount' => 50,
+        'change' => 0,
+        'paid_at' => now(),
+    ]);
+    $sale->payments()->createMany([
+        ['payment_method_id' => $cash->id, 'amount' => 20],
+        ['payment_method_id' => $yape->id, 'amount' => 30, 'reference' => 'YAPE-001'],
+    ]);
+
+    $this->actingAs($user)
+        ->postJson(route('boxes.close', $cashRegister), [
+            'counted_amount' => 119,
+            'payment_closures' => [[
+                'payment_method_id' => $yape->id,
+                'counted_amount' => 28,
+            ]],
+        ])
+        ->assertOk();
+
+    expect((float) $cashRegister->refresh()->difference)->toBe(-1.0)
+        ->and((float) $cashRegister->paymentClosures()->whereNull('payment_method_id')->value('expected_amount'))->toBe(120.0)
+        ->and((float) $cashRegister->paymentClosures()->where('payment_method_id', $yape->id)->value('difference'))->toBe(-2.0);
 });
 
 it('allows only one open session per cash terminal', function () {
@@ -342,6 +397,28 @@ it('does not allow editing a closed cash register', function () {
 
     expect($cashRegister->refresh()->name)->toBe('Caja histórica')
         ->and((float) $cashRegister->opening_amount)->toBe(100.0);
+});
+
+it('does not allow one cashier to modify another cashiers turn', function () {
+    $owner = User::factory()->create();
+    $otherCashier = User::factory()->create();
+    $cashRegister = CashRegister::create([
+        'name' => 'Turno protegido',
+        'opening_amount' => 100,
+        'current_amount' => 100,
+        'status' => 'open',
+        'opened_by' => $owner->id,
+        'opened_at' => now(),
+    ]);
+
+    Livewire::actingAs($otherCashier)
+        ->test(CashRegisterComponent::class)
+        ->set('cash_register_id', $cashRegister->id)
+        ->set('opening_amount', 200)
+        ->call('store')
+        ->assertDispatched('swal');
+
+    expect((float) $cashRegister->refresh()->opening_amount)->toBe(100.0);
 });
 
 it('does not allow changing the opening amount after a cash movement', function () {

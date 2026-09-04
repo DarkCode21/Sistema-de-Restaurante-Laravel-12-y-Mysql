@@ -232,13 +232,13 @@
 
                             <div class="flex-1">
                                     <label
-                                        class="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Caja (solo efectivo)</label>
+                                        class="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Turno de caja</label>
                                 <select wire:model="boxId"
                                     class="w-full bg-slate-50 border-slate-200 rounded-lg py-1.5 px-3 text-sm">
                                     <option value="">Seleccionar...</option>
                                     @foreach ($boxes as $box)
                                         <option value="{{ $box->id }}">
-                                            {{ $box->name }} ({{ $box->opener->name ?? 'Sistema' }})
+                                            {{ $box->terminal?->name ?? $box->name }} ({{ $box->opener->name ?? 'Sistema' }})
                                         </option>
                                     @endforeach
                                 </select>
@@ -268,6 +268,7 @@
                             </button>
 
                         </div>
+                        <p class="mt-2 text-[10px] font-medium text-slate-400">Todas las formas de pago se registran en tu turno. Solo el efectivo cambia el saldo físico.</p>
 
                         <div class="mt-4 grid grid-cols-3 gap-3">
 
@@ -371,7 +372,7 @@
                                                 <span class="text-[10px] font-bold text-slate-400 mr-1">
                                                     {{ $empresa->currency_simbol }}
                                                 </span>
-                                                <input type="number" step="0.01"
+                                                <input type="number" step="0.10"
                                                     wire:model.live="payments.{{ $index }}.amount"
                                                     class="w-20 bg-transparent border-none p-0 text-right text-sm font-black text-orange-600 focus:ring-0">
                                             </div>

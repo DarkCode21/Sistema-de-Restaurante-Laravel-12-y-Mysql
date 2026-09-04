@@ -59,7 +59,9 @@ class PromotionComponent extends Component
         $this->product_id = $promotion->product_id;
         $this->name = $promotion->name;
         $this->discount_type = $promotion->discount_type;
-        $this->value = $promotion->value;
+        $this->value = $promotion->discount_type === 'fixed'
+            ? $this->moneyForInput($promotion->value)
+            : $this->numberForInput($promotion->value);
         $this->starts_at = $promotion->starts_at?->format('Y-m-d\TH:i') ?? '';
         $this->ends_at = $promotion->ends_at?->format('Y-m-d\TH:i') ?? '';
         $this->active = $promotion->active;
@@ -120,5 +122,17 @@ class PromotionComponent extends Component
         $this->discount_type = 'percent';
         $this->active = true;
         $this->resetValidation();
+    }
+
+    private function numberForInput($value): string
+    {
+        $value = (string) $value;
+
+        return str_contains($value, '.') ? rtrim(rtrim($value, '0'), '.') : $value;
+    }
+
+    private function moneyForInput($value): string
+    {
+        return number_format((float) $value, 2, '.', '');
     }
 }

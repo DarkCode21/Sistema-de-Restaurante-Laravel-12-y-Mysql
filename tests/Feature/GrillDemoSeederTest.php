@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Category;
+use App\Models\CashRegister;
 use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\Order;
@@ -8,6 +9,8 @@ use App\Models\OrderDetail;
 use App\Models\Payment;
 use App\Models\PreparationStation;
 use App\Models\Product;
+use App\Models\Promotion;
+use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use App\Models\Table;
@@ -31,6 +34,9 @@ it('creates a complete parrilleria demo while disabling the legacy menu', functi
     $potatoDetail = OrderDetail::whereHas('product', fn ($query) => $query->where('name', 'Papas a elección'))
         ->whereNotNull('parent_detail_id')
         ->firstOrFail();
+    $splitSale = Sale::where('customer_name', 'Pago mixto Yape y efectivo')
+        ->whereHas('order', fn ($query) => $query->where('customer_phone', 'like', 'DEMO-GRILL-%'))
+        ->firstOrFail();
 
     expect($legacyProduct->fresh()->status)->toEqual(0)
         ->and(Product::where('name', 'Parrilla de Pollo - Pecho')->where('status', true)->exists())->toBeTrue()
@@ -49,9 +55,20 @@ it('creates a complete parrilleria demo while disabling the legacy menu', functi
         ->and(Table::where('status', 'ocupada')->count())->toBeGreaterThan(0)
         ->and(Order::where('status', 'abierto')->count())->toBeGreaterThan(0)
         ->and(OrderDetail::whereNotNull('parent_detail_id')->where('cooking_status', 'in_progress')->count())->toBeGreaterThan(0)
-        ->and(Sale::count())->toBeGreaterThanOrEqual(8)
+        ->and(Sale::whereHas('order', fn ($query) => $query->where('customer_phone', 'like', 'DEMO-GRILL-%'))->count())->toBe(24)
         ->and(SaleDetail::count())->toBeGreaterThanOrEqual(16)
-        ->and(Payment::count())->toBeGreaterThanOrEqual(8)
+        ->and(SaleDetail::whereNotNull('cost_total')->count())->toBeGreaterThan(0)
+        ->and($splitSale->payments)->toHaveCount(2)
+        ->and((float) $splitSale->subtotal)->toBe(51.0)
+        ->and((float) $splitSale->total)->toBe(54.06)
+        ->and((float) $splitSale->payments->sum('amount'))->toEqual((float) $splitSale->total)
+        ->and(OrderDetail::whereNotNull('notes')->count())->toBe(2)
+        ->and(OrderDetail::where('notes', 'Carne a término medio')->exists())->toBeFalse()
+        ->and(Payment::count())->toBeGreaterThanOrEqual(20)
         ->and(Ingredient::count())->toBeGreaterThanOrEqual(8)
-        ->and(Expense::where('concept', 'like', 'DEMO-GRILL-%')->count())->toBe(2);
+        ->and(Expense::where('concept', 'like', 'DEMO-GRILL-%')->count())->toBe(2)
+        ->and(Purchase::where('reference', 'DEMO-GRILL-COMPRA-001')->exists())->toBeTrue()
+        ->and(Promotion::where('name', 'DEMO-GRILL-Almuerzo 15%')->exists())->toBeTrue()
+        ->and(CashRegister::where('status', 'open')->where('notes', 'DEMO-GRILL-TURNO-ACTUAL')->exists())->toBeTrue()
+        ->and(CashRegister::where('status', 'closed')->whereHas('paymentClosures')->exists())->toBeTrue();
 });

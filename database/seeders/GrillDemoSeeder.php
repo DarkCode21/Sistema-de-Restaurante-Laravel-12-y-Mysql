@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\CashRegister;
+use App\Models\CashRegisterPaymentClosure;
 use App\Models\CashTerminal;
 use App\Models\Category;
 use App\Models\Expense;
@@ -12,8 +13,11 @@ use App\Models\Payment;
 use App\Models\PaymentMethod;
 use App\Models\PreparationStation;
 use App\Models\Product;
+use App\Models\Promotion;
+use App\Models\Purchase;
 use App\Models\Sale;
 use App\Models\SaleDetail;
+use App\Models\Supplier;
 use App\Models\Table;
 use App\Models\User;
 use Carbon\Carbon;
@@ -120,6 +124,7 @@ class GrillDemoSeeder extends Seeder
                     [
                         'category_id' => $categories[$categoryName]->id,
                         'price' => $price,
+                        'cost' => round($price * 0.38, 4),
                         'stock' => $stock,
                         'status' => true,
                         'image' => $image,
@@ -140,6 +145,7 @@ class GrillDemoSeeder extends Seeder
                     [
                         'category_id' => $categories['Parrillas de Pollo']->id,
                         'price' => 0,
+                        'cost' => 0,
                         'stock' => $stock,
                         'status' => false,
                         'image' => 'products/grill-chicken.png',
@@ -188,6 +194,23 @@ class GrillDemoSeeder extends Seeder
                 ]);
             }
 
+            Promotion::updateOrCreate(['name' => 'DEMO-GRILL-Almuerzo 15%'], [
+                'product_id' => $products['Parrilla de Pollo - Pecho']->id,
+                'discount_type' => 'percent',
+                'value' => 15,
+                'starts_at' => today()->setTime(11, 0),
+                'ends_at' => today()->setTime(16, 0),
+                'active' => true,
+            ]);
+            Promotion::updateOrCreate(['name' => 'DEMO-GRILL-Happy hour S/ 2'], [
+                'product_id' => $products['Cerveza Pilsen']->id,
+                'discount_type' => 'fixed',
+                'value' => 2,
+                'starts_at' => today()->setTime(18, 0),
+                'ends_at' => today()->setTime(22, 0),
+                'active' => true,
+            ]);
+
             $potatoOptions = $products['Papas a elección'];
             $potatoOptions->optionGroups()->delete();
             $potatoOptions->optionGroups()->create([
@@ -209,14 +232,14 @@ class GrillDemoSeeder extends Seeder
             ]);
 
             $ingredients = collect([
-                ['Pechuga de pollo', 'kg', 18, 3], ['Pierna de pollo', 'kg', 20, 3], ['Pollo trozado', 'kg', 25, 4],
-                ['Carne de res', 'kg', 15, 3], ['Carne de cerdo', 'kg', 16, 3], ['Papa', 'kg', 35, 5],
-                ['Lechuga', 'unit', 30, 5], ['Tomate', 'kg', 12, 2], ['Aceite', 'l', 10, 2], ['Carbón', 'kg', 30, 5],
+                ['Pechuga de pollo', 'kg', 18, 3, 14.50], ['Pierna de pollo', 'kg', 20, 3, 12.80], ['Pollo trozado', 'kg', 25, 4, 11.60],
+                ['Carne de res', 'kg', 15, 3, 24.00], ['Carne de cerdo', 'kg', 16, 3, 18.50], ['Papa', 'kg', 35, 5, 3.80],
+                ['Lechuga', 'unit', 30, 5, 1.20], ['Tomate', 'kg', 12, 2, 4.20], ['Aceite', 'l', 10, 2, 9.50], ['Carbón', 'kg', 30, 5, 3.20],
             ])->mapWithKeys(function (array $item): array {
-                [$name, $unit, $stock, $minimumStock] = $item;
+                [$name, $unit, $stock, $minimumStock, $unitCost] = $item;
                 return [$name => Ingredient::updateOrCreate(
                     compact('name'),
-                    ['unit' => $unit, 'stock' => $stock, 'minimum_stock' => $minimumStock],
+                    ['unit' => $unit, 'stock' => $stock, 'minimum_stock' => $minimumStock, 'unit_cost' => $unitCost],
                 )];
             });
             $recipes = [
@@ -268,45 +291,54 @@ class GrillDemoSeeder extends Seeder
 
             $terminal = CashTerminal::firstOrCreate(['name' => 'Caja principal'], ['is_active' => true]);
             $terminal->update(['is_active' => true]);
-            $cashRegister = CashRegister::withTrashed()
-                ->where('status', 'open')
-                ->where(fn ($query) => $query->where('cash_terminal_id', $terminal->id)->orWhere('name', 'Caja Principal'))
-                ->first() ?? new CashRegister();
-            $cashRegister->fill([
-                'cash_terminal_id' => $terminal->id,
-                'name' => $terminal->name,
-                'opening_amount' => 300,
-                'current_amount' => 300,
-                'status' => 'open',
-                'opened_by' => $operator->id,
-                'opened_at' => now()->startOfDay(),
-                'notes' => 'Caja de demostración para parrillería',
-            ]);
-            $cashRegister->save();
-            if ($cashRegister->trashed()) {
-                $cashRegister->restore();
-            }
-
             $this->removePreviousDemoData();
+            $cashRegister = $this->createDemoTurn($operator, $terminal, today(), 'DEMO-GRILL-TURNO-ACTUAL', true);
 
             $historicTickets = [
                 [now()->subMonths(5)->setDay(12)->setTime(13, 20), 'Mesa 1', 'Familia Quispe', 'Efectivo', [['Parrilla de Pollo - Pecho', 2], ['Papas Ancochadas', 2], ['Chicha Morada', 2]]],
+                [now()->subMonths(5)->setDay(26)->setTime(20, 5), 'Mesa 4', 'Patricia Núñez', ['Efectivo' => 0.5, 'Yape' => 0.5], [['Bife a la Parrilla', 1], ['Papas a elección', 1], ['Inca Kola Personal', 2]]],
                 [now()->subMonths(4)->setDay(18)->setTime(20, 10), 'Mesa 3', 'Carlos Ramírez', 'Tarjeta', [['Parrilla de Carne', 2], ['Porción de Arroz Blanco', 2], ['Coca-Cola Personal', 2]]],
+                [now()->subMonths(4)->setDay(29)->setTime(13, 45), 'Terraza 2', 'Alonso Vega', 'Efectivo', [['¼ Pollo a la Parrilla', 2], ['Chicha Morada', 2]]],
                 [now()->subMonths(3)->setDay(8)->setTime(19, 40), 'Terraza 1', 'Ana Torres', 'Yape', [['Parrilla de Cerdo', 2], ['Choclo a la Parrilla', 2], ['Maracuyá Frozen', 2]]],
+                [now()->subMonths(3)->setDay(24)->setTime(14, 0), 'Mesa 6', 'Familia Ramos', ['Efectivo' => 0.4, 'Yape' => 0.6], [['Parrilla Familiar', 1], ['Coca-Cola Personal', 4]]],
                 [now()->subMonths(2)->setDay(22)->setTime(14, 15), 'Mesa Familiar', 'Familia Salazar', 'Efectivo', [['Parrilla Familiar', 1], ['Chicha Morada', 4], ['Ensalada Criolla', 2]]],
+                [now()->subMonths(2)->setDay(28)->setTime(21, 20), 'Mesa 2', 'Valeria Cruz', 'Tarjeta', [['Costillas de Cerdo BBQ', 2], ['Papas Ancochadas', 2], ['Cerveza Pilsen', 2]]],
                 [now()->subMonth()->setDay(15)->setTime(21, 0), 'Mesa 5', 'Jorge Medina', 'Tarjeta', [['Combo Parrillero Dúo', 1], ['Cerveza Pilsen', 2], ['Papas Ancochadas', 1]]],
+                [now()->subMonth()->setDay(27)->setTime(12, 30), 'Terraza 3', 'Mariela Soto', 'Yape', [['Parrilla de Pollo - Pecho', 1], ['Ensalada Criolla', 1], ['Chicha Morada', 1]]],
+                [now()->subDays(18)->setTime(20, 15), 'Mesa 4', 'Pedro Ruiz', ['Efectivo' => 0.5, 'Yape' => 0.5], [['Combo Parrillero Personal', 2], ['Cerveza Pilsen', 2]]],
+                [now()->subDays(11)->setTime(13, 50), 'Mesa 6', 'Claudia Flores', 'Efectivo', [['Anticuchos de Corazón', 2], ['Papas a elección', 2], ['Maracuyá Frozen', 2]]],
+                [now()->subDays(6)->setTime(19, 5), 'Terraza 1', 'Diego León', 'Tarjeta', [['Brochetas de Cerdo', 2], ['Choclo a la Parrilla', 2], ['Coca-Cola Personal', 2]]],
+                [now()->subDays(4)->setTime(20, 30), 'Mesa 5', 'Silvia Poma', ['Efectivo' => 0.5, 'Yape' => 0.5], [['Parrilla de Cerdo', 1], ['Papas Ancochadas', 1], ['Cerveza Pilsen', 2]]],
+                [now()->subDays(2)->setTime(13, 25), 'Terraza 3', 'Martín Campos', 'Yape', [['Parrilla de Pollo - Pierna', 2], ['Ensalada Criolla', 2], ['Chicha Morada', 2]]],
+                [now()->subDay()->setTime(13, 10), 'Mesa 1', 'Turno cerrado efectivo', 'Efectivo', [['Parrilla de Pollo - Pierna', 1], ['Chicha Morada', 1]]],
+                [now()->subDay()->setTime(14, 35), 'Mesa 3', 'Turno cerrado Yape', 'Yape', [['Parrilla de Carne', 1], ['Papas Ancochadas', 1]]],
+                [now()->subDay()->setTime(16, 20), 'Terraza 2', 'Turno cerrado tarjeta', 'Tarjeta', [['Costillas de Cerdo BBQ', 1], ['Coca-Cola Personal', 2]]],
+                [today()->setTime(11, 20), 'Mesa 2', 'Elena Vargas', 'Tarjeta', [['Combo Parrillero Dúo', 1], ['Coca-Cola Personal', 2]]],
                 [today()->setTime(12, 40), 'Mesa 4', 'Lucía Paredes', 'Efectivo', [['¼ Pollo a la Parrilla', 2], ['Porción de Arroz Blanco', 2], ['Chicha Morada', 2]]],
                 [today()->setTime(14, 5), 'Terraza 2', 'Miguel Rojas', 'Yape', [['Costillas de Cerdo BBQ', 1], ['Papas Ancochadas', 1], ['Inca Kola Personal', 1]]],
+                [today()->setTime(16, 40), 'Mesa 1', 'Pago mixto Yape y efectivo', ['Efectivo' => 0.5, 'Yape' => 0.5], [['Parrilla de Carne', 1], ['Papas a elección', 1], ['Chicha Morada', 1]]],
                 [today()->setTime(19, 15), 'Mesa 6', 'Grupo Empresa', 'Tarjeta', [['Parrilla Familiar', 1], ['Anticuchos de Corazón', 2], ['Cerveza Pilsen', 4]]],
                 [today()->setTime(20, 5), 'Terraza 3', 'Rosa Flores', 'Efectivo', [['Combo Parrillero Personal', 2], ['Salsa Chimichurri', 2], ['Maracuyá Frozen', 2]]],
             ];
 
-            foreach ($historicTickets as $index => [$paidAt, $tableName, $customer, $methodName, $lines]) {
+            $closedTurns = [];
+            foreach ($historicTickets as $index => [$paidAt, $tableName, $customer, $paymentMethods, $lines]) {
+                $dateKey = $paidAt->toDateString();
+                $ticketRegister = $paidAt->isToday()
+                    ? $cashRegister
+                    : ($closedTurns[$dateKey] ??= $this->createDemoTurn(
+                        $operator,
+                        $terminal,
+                        $paidAt,
+                        'DEMO-GRILL-TURNO-' . $dateKey,
+                        false,
+                    ));
                 $this->createCompletedTicket(
                     $tables[$tableName],
                     $operator,
-                    $cashRegister,
-                    $methods[$methodName],
+                    $ticketRegister,
+                    $methods,
+                    $paymentMethods,
                     $products,
                     $paidAt,
                     $customer,
@@ -315,9 +347,15 @@ class GrillDemoSeeder extends Seeder
                 );
             }
 
+            foreach ($closedTurns as $closedTurn) {
+                $this->closeDemoTurn($closedTurn, $operator);
+            }
+
+            $this->createDemoPurchase($operator, $ingredients);
+
             $demoExpenses = [
-                ['DEMO-GRILL-Compra de carbón', 'Carbón para parrilla', 42.00, today()->setTime(9, 15)],
-                ['DEMO-GRILL-Compra de verduras', 'Papa, lechuga y tomate', 28.50, today()->setTime(10, 30)],
+                ['DEMO-GRILL-Limpieza', 'Productos de limpieza del local', 24.00, today()->setTime(9, 15)],
+                ['DEMO-GRILL-Gas', 'Recarga de gas para cocina', 38.50, today()->setTime(10, 30)],
             ];
             foreach ($demoExpenses as [$concept, $description, $amount, $expenseDate]) {
                 Expense::create([
@@ -332,23 +370,25 @@ class GrillDemoSeeder extends Seeder
             }
 
             $cashRegister->update([
-                'current_amount' => (float) $cashRegister->opening_amount + collect($historicTickets)
-                    ->filter(fn (array $ticket) => $ticket[0]->isToday() && $ticket[3] === 'Efectivo')
-                    ->sum(fn (array $ticket) => collect($ticket[4])->sum(fn (array $line) => $products[$line[0]]->price * $line[1]))
+                'current_amount' => (float) $cashRegister->opening_amount
+                    + Payment::query()
+                        ->whereHas('sale', fn ($query) => $query->where('cash_register_id', $cashRegister->id))
+                        ->whereHas('method', fn ($query) => $query->where('is_efectivo', true))
+                        ->sum('amount')
                     - collect($demoExpenses)->sum(fn (array $expense) => $expense[2]),
             ]);
 
             $this->createOpenOrder($tables['Mesa 2'], $operator, $products, 'María López', 'DEMO-GRILL-OPEN-01', [
-                ['Combo Parrillero Personal', 1, 'Bien dorado, con papas ancochadas'],
+                ['Combo Parrillero Personal', 1, null],
                 ['Chicha Morada', 2, null],
             ]);
             $this->createOpenOrder($tables['Mesa 5'], $operator, $products, 'Roberto Díaz', 'DEMO-GRILL-OPEN-02', [
-                ['Combo Parrillero Dúo', 1, 'Carne a término medio'],
+                ['Combo Parrillero Dúo', 1, null],
                 ['Salsa Chimichurri', 1, null],
             ]);
             $this->createOpenOrder($tables['Terraza 1'], $operator, $products, 'Familia Castro', 'DEMO-GRILL-OPEN-03', [
                 ['Parrilla de Cerdo', 2, 'Sin cebolla'],
-                ['Choclo a la Parrilla', 2, null],
+                ['Choclo a la Parrilla', 2, 'Sin mantequilla'],
                 ['Coca-Cola Personal', 2, null],
             ]);
         });
@@ -358,47 +398,154 @@ class GrillDemoSeeder extends Seeder
     {
         $orderIds = Order::where('customer_phone', 'like', 'DEMO-GRILL-%')->pluck('id');
         $saleIds = Sale::whereIn('order_id', $orderIds)->pluck('id');
+        $purchaseIds = Purchase::where('reference', 'like', 'DEMO-GRILL-%')->pluck('id');
+        $cashRegisterIds = CashRegister::withTrashed()
+            ->where(fn ($query) => $query
+                ->where('notes', 'like', 'DEMO-GRILL-TURNO%')
+                ->orWhere('notes', 'Caja de demostración para parrillería'))
+            ->pluck('id');
 
         Payment::whereIn('sale_id', $saleIds)->delete();
         SaleDetail::whereIn('sale_id', $saleIds)->delete();
         Sale::whereIn('id', $saleIds)->delete();
         Order::whereIn('id', $orderIds)->delete();
         Expense::withTrashed()->where('concept', 'like', 'DEMO-GRILL-%')->forceDelete();
+        Purchase::whereIn('id', $purchaseIds)->delete();
+        CashRegisterPaymentClosure::whereIn('cash_register_id', $cashRegisterIds)->delete();
+        CashRegister::withTrashed()->whereIn('id', $cashRegisterIds)->forceDelete();
     }
 
-    private function createCompletedTicket(Table $table, User $operator, CashRegister $cashRegister, PaymentMethod $method, $products, Carbon $paidAt, string $customer, string $marker, array $lines): void
+    private function createDemoTurn(User $operator, CashTerminal $terminal, Carbon $date, string $marker, bool $isOpen): CashRegister
     {
-        $total = collect($lines)->sum(fn (array $line) => $products[$line[0]]->price * $line[1]);
+        return CashRegister::create([
+            'cash_terminal_id' => $terminal->id,
+            'name' => $terminal->name,
+            'opening_amount' => 300,
+            'current_amount' => 300,
+            'status' => $isOpen ? 'open' : 'closed',
+            'opened_by' => $operator->id,
+            'closed_by' => $isOpen ? null : $operator->id,
+            'opened_at' => $date->copy()->startOfDay(),
+            'closed_at' => $isOpen ? null : $date->copy()->setTime(23, 0),
+            'closing_amount' => $isOpen ? null : 300,
+            'difference' => $isOpen ? null : 0,
+            'notes' => $marker,
+            'closing_notes' => $isOpen ? null : 'Cierre de demostración conciliado.',
+        ]);
+    }
+
+    private function closeDemoTurn(CashRegister $cashRegister, User $operator): void
+    {
+        $cashRegister->load('sales.payments.method');
+        $cashPayments = $cashRegister->sales->flatMap->payments
+            ->filter(fn (Payment $payment) => $payment->method?->is_efectivo)
+            ->sum('amount');
+        $expectedCash = round((float) $cashRegister->opening_amount + (float) $cashPayments, 2);
+
+        $cashRegister->update([
+            'current_amount' => $expectedCash,
+            'closing_amount' => $expectedCash,
+            'difference' => 0,
+            'closed_by' => $operator->id,
+            'closed_at' => $cashRegister->opened_at->copy()->setTime(23, 0),
+        ]);
+        $cashRegister->paymentClosures()->create([
+            'label' => 'Efectivo físico',
+            'expected_amount' => $expectedCash,
+            'counted_amount' => $expectedCash,
+            'difference' => 0,
+        ]);
+
+        $cashRegister->sales->flatMap->payments
+            ->filter(fn (Payment $payment) => !$payment->method?->is_efectivo)
+            ->groupBy('payment_method_id')
+            ->each(function ($payments, $methodId) use ($cashRegister): void {
+                $expectedAmount = round((float) $payments->sum('amount'), 2);
+
+                $cashRegister->paymentClosures()->create([
+                    'payment_method_id' => $methodId,
+                    'label' => $payments->first()->method->name,
+                    'expected_amount' => $expectedAmount,
+                    'counted_amount' => $expectedAmount,
+                    'difference' => 0,
+                ]);
+            });
+    }
+
+    private function createDemoPurchase(User $operator, $ingredients): void
+    {
+        $supplier = Supplier::firstOrCreate(
+            ['name' => 'Distribuidora Parrillera Demo'],
+            ['contact_name' => 'Carla Ventas', 'phone' => '999 555 222', 'document_number' => '20600001234'],
+        );
+        $purchase = Purchase::create([
+            'supplier_id' => $supplier->id,
+            'user_id' => $operator->id,
+            'reference' => 'DEMO-GRILL-COMPRA-001',
+            'purchased_at' => today()->setTime(8, 30),
+        ]);
+        $total = 0.0;
+
+        foreach ([
+            ['Carne de res', 8, 25.50],
+            ['Carbón', 20, 3.40],
+            ['Aceite', 4, 10.20],
+        ] as [$ingredientName, $quantity, $unitCost]) {
+            $ingredient = $ingredients[$ingredientName];
+            $stock = (float) $ingredient->stock;
+            $lineTotal = round($quantity * $unitCost, 2);
+            $averageCost = (($stock * (float) $ingredient->unit_cost) + ($quantity * $unitCost)) / ($stock + $quantity);
+
+            $purchase->details()->create([
+                'ingredient_id' => $ingredient->id,
+                'quantity' => $quantity,
+                'unit_cost' => $unitCost,
+                'total' => $lineTotal,
+            ]);
+            $ingredient->update([
+                'stock' => $stock + $quantity,
+                'unit_cost' => round($averageCost, 4),
+            ]);
+            $total += $lineTotal;
+        }
+
+        $purchase->update(['total' => round($total, 2)]);
+    }
+
+    private function createCompletedTicket(Table $table, User $operator, CashRegister $cashRegister, $methods, string|array $paymentMethods, $products, Carbon $paidAt, string $customer, string $marker, array $lines): void
+    {
+        $orderSubtotal = collect($lines)->sum(fn (array $line) => $products[$line[0]]->price * $line[1]);
         $order = Order::create([
             'table_id' => $table->id,
             'user_id' => $operator->id,
             'customer_name' => $customer,
             'customer_phone' => $marker,
             'status' => 'cerrado',
-            'total' => $total,
+            'total' => $orderSubtotal,
             'amount_pending' => 0,
         ]);
         $order->forceFill(['created_at' => $paidAt, 'updated_at' => $paidAt])->saveQuietly();
 
         foreach ($lines as [$productName, $quantity]) {
             $product = $products[$productName];
-            $subtotal = $product->price * $quantity;
+            $lineSubtotal = $product->price * $quantity;
             $order->details()->create([
                 'product_id' => $product->id,
                 'quantity' => $quantity,
                 'requires_kitchen' => $product->requires_kitchen,
                 'price' => $product->price,
-                'subtotal' => $subtotal,
+                'subtotal' => $lineSubtotal,
                 'cooking_status' => 'served',
             ]);
         }
 
-        $tip = round($total * 0.06, 2);
+        $tip = round($orderSubtotal * 0.06, 2);
+        $total = $orderSubtotal + $tip;
         $sale = Sale::create([
             'order_id' => $order->id,
-            'cash_register_id' => $method->is_efectivo ? $cashRegister->id : null,
+            'cash_register_id' => $cashRegister->id,
             'customer_name' => $customer,
-            'subtotal' => $total,
+            'subtotal' => $orderSubtotal,
             'tax' => 0,
             'tip' => $tip,
             'total' => $total,
@@ -410,26 +557,71 @@ class GrillDemoSeeder extends Seeder
 
         foreach ($lines as [$productName, $quantity]) {
             $product = $products[$productName];
+            $unitCost = $this->productUnitCost($product);
+            $costTotal = $unitCost === null ? null : round($unitCost * $quantity, 2);
+            $lineSubtotal = $product->price * $quantity;
             SaleDetail::create([
                 'sale_id' => $sale->id,
                 'product_id' => $product->id,
                 'product_name' => $product->name,
                 'quantity' => $quantity,
                 'price' => $product->price,
+                'unit_cost' => $unitCost,
+                'cost_total' => $costTotal,
+                'gross_profit' => $costTotal === null ? null : round($lineSubtotal - $costTotal, 2),
                 'tax' => 0,
-                'subtotal' => $product->price * $quantity,
+                'subtotal' => $lineSubtotal,
             ]);
         }
 
-        $payment = Payment::create([
-            'sale_id' => $sale->id,
-            'payment_method_id' => $method->id,
-            'amount' => $total,
-            'received_amount' => $total,
-            'returned_amount' => 0,
-            'reference' => 'DEMO-' . $marker,
-        ]);
-        $payment->forceFill(['created_at' => $paidAt, 'updated_at' => $paidAt])->saveQuietly();
+        $paymentMethods = is_array($paymentMethods) ? $paymentMethods : [$paymentMethods => 1];
+        $paid = 0.0;
+        foreach ($paymentMethods as $methodName => $share) {
+            $amount = $methodName === array_key_last($paymentMethods)
+                ? round($total - $paid, 2)
+                : round($total * $share, 2);
+            $payment = Payment::create([
+                'sale_id' => $sale->id,
+                'payment_method_id' => $methods[$methodName]->id,
+                'amount' => $amount,
+                'received_amount' => $amount,
+                'returned_amount' => 0,
+                'reference' => 'DEMO-' . $marker . '-' . $methodName,
+            ]);
+            $payment->forceFill(['created_at' => $paidAt, 'updated_at' => $paidAt])->saveQuietly();
+            $paid += $amount;
+        }
+    }
+
+    private function productUnitCost(Product $product): ?float
+    {
+        $product->loadMissing(['recipeIngredients', 'components']);
+
+        if ($product->is_combo) {
+            $cost = 0.0;
+            foreach ($product->components as $component) {
+                $componentCost = $this->productUnitCost($component);
+                if ($componentCost === null) {
+                    return null;
+                }
+
+                $cost += $componentCost * $component->pivot->quantity;
+            }
+
+            return round($cost, 4);
+        }
+
+        if ($product->recipeIngredients->isNotEmpty()) {
+            if ($product->recipeIngredients->contains(fn (Ingredient $ingredient) => $ingredient->unit_cost === null)) {
+                return null;
+            }
+
+            return round((float) $product->recipeIngredients->sum(
+                fn (Ingredient $ingredient) => (float) $ingredient->pivot->quantity * (float) $ingredient->unit_cost,
+            ), 4);
+        }
+
+        return $product->cost === null ? null : (float) $product->cost;
     }
 
     private function createOpenOrder(Table $table, User $operator, $products, string $customer, string $marker, array $lines): void

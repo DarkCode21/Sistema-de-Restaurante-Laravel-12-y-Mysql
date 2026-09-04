@@ -23,6 +23,7 @@ class ProductComponent extends Component
     public $category_id = '';
     public $name = '';
     public $price = '';
+    public $cost = null;
     public $tax_rate = 0;
     public $stock = '';
     public $status = 1;
@@ -80,7 +81,7 @@ class ProductComponent extends Component
 
     private function resetInputFields()
     {
-        $this->reset(['product_id', 'category_id', 'name', 'requires_kitchen', 'is_combo', 'preparation_station_id', 'option_groups', 'components', 'recipe_ingredients', 'price', 'tax_rate', 'stock', 'status', 'image', 'old_image']);
+        $this->reset(['product_id', 'category_id', 'name', 'requires_kitchen', 'is_combo', 'preparation_station_id', 'option_groups', 'components', 'recipe_ingredients', 'price', 'cost', 'tax_rate', 'stock', 'status', 'image', 'old_image']);
         $this->status = 1;
         $this->tax_rate = (float) (Setting::first()?->default_tax_rate ?? 0);
         $this->resetValidation();
@@ -92,6 +93,7 @@ class ProductComponent extends Component
             'category_id' => 'required|exists:categories,id',
             'name' => ['required', 'min:2', Rule::unique('products', 'name')->ignore($this->product_id)],
             'price' => 'required|numeric',
+            'cost' => 'nullable|numeric|min:0',
             'tax_rate' => 'required|numeric|min:0|max:100',
             'stock' => $this->is_combo ? 'nullable|integer' : 'required|integer',
             'status' => 'required|boolean',
@@ -125,6 +127,7 @@ class ProductComponent extends Component
             'category_id' => $this->category_id,
             'name'        => $this->name,
             'price'       => $this->price,
+            'cost'        => $this->is_combo || $this->cost === '' ? null : $this->cost,
             'tax_rate'    => $this->tax_rate,
             'stock'       => $this->is_combo ? 0 : $this->stock,
             'status'      => $this->status,
@@ -182,8 +185,9 @@ class ProductComponent extends Component
         $this->product_id  = $product->id;
         $this->category_id = $product->category_id;
         $this->name        = $product->name;
-        $this->price       = $product->price;
-        $this->tax_rate    = $product->tax_rate;
+        $this->price       = $this->moneyForInput($product->price);
+        $this->cost        = $this->moneyForInput($product->cost);
+        $this->tax_rate    = $this->numberForInput($product->tax_rate);
         $this->stock       = $product->stock;
         $this->status      = $product->status;
         $this->requires_kitchen = $product->requires_kitchen;
@@ -195,7 +199,7 @@ class ProductComponent extends Component
                 'required' => $group->required,
                 'values' => $group->values->map(fn ($value) => [
                     'name' => $value->name,
-                    'price_adjustment' => $value->price_adjustment,
+                    'price_adjustment' => $this->moneyForInput($value->price_adjustment),
                 ])->all(),
             ])->all();
         $this->old_image   = $product->image;
@@ -290,5 +294,21 @@ class ProductComponent extends Component
             'text'  => 'Producto enviado a la papelera',
             'icon'  => 'success',
         ]);
+    }
+
+    private function numberForInput($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = (string) $value;
+
+        return str_contains($value, '.') ? rtrim(rtrim($value, '0'), '.') : $value;
+    }
+
+    private function moneyForInput($value): ?string
+    {
+        return $value === null ? null : number_format((float) $value, 2, '.', '');
     }
 }

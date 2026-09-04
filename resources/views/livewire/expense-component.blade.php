@@ -162,13 +162,13 @@
                                         class="flex justify-end gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
                                         @can('gastos.editar')
                                             <button wire:click="edit({{ $expense->id }})"
-                                                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-amber-600 hover:border-amber-300 hover:bg-amber-50/30 transition-all border border-slate-200 shadow-sm active:scale-90">
+                                                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-amber-600 hover:border-amber-200 transition-all border border-slate-200 shadow-sm">
                                                 <i class="fa-solid fa-pen text-[10px]"></i>
                                             </button>
                                         @endcan
                                         @can('gastos.eliminar')
                                             <button wire:click="deleteConfirm({{ $expense->id }})"
-                                                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-rose-600 hover:border-rose-300 hover:bg-rose-50/30 transition-all border border-slate-200 shadow-sm active:scale-90">
+                                                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-rose-600 hover:border-rose-200 transition-all border border-slate-200 shadow-sm">
                                                 <i class="fa-solid fa-trash-can text-[10px]"></i>
                                             </button>
                                         @endcan

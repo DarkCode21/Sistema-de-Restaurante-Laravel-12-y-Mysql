@@ -11,6 +11,7 @@ class Product extends Model
         'preparation_station_id',
         'name',
         'price',
+        'cost',
         'tax_rate',
         'stock',
         'status',
@@ -23,6 +24,7 @@ class Product extends Model
         'requires_kitchen' => 'boolean',
         'is_combo' => 'boolean',
         'tax_rate' => 'decimal:2',
+        'cost' => 'decimal:4',
     ];
 
     public function category()

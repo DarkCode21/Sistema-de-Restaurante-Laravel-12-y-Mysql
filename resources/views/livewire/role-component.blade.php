@@ -67,7 +67,7 @@
                                     <div class="flex justify-end gap-2">
                                         @can('roles.editar')
                                             <button wire:click="edit({{ $role->id }})"
-                                                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-orange-600 hover:border-orange-200 transition-all border border-slate-200 shadow-sm">
+                                                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white text-slate-400 hover:text-amber-600 hover:border-amber-200 transition-all border border-slate-200 shadow-sm">
                                                 <i class="fa-solid fa-pen text-[10px]"></i>
                                             </button>
                                         @endcan

@@ -248,6 +248,19 @@
                         </div>
 
                         @if (!$is_combo)
+                            <div>
+                                <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Costo unitario</label>
+                                <div class="relative">
+                                    <span class="absolute left-4 top-4 text-slate-400 text-sm">S/</span>
+                                    <input wire:model="cost" type="number" min="0" step="0.01" placeholder="Solo sin receta"
+                                        class="w-full border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all mt-1">
+                                </div>
+                                <p class="mt-1 text-[10px] text-slate-400">Se usa solo cuando el producto no tiene receta.</p>
+                                @error('cost') <span class="text-red-500 text-[10px] font-bold mt-1 block">{{ $message }}</span> @enderror
+                            </div>
+                        @endif
+
+                        @if (!$is_combo)
                         <div>
                             <label
                                 class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Disponibilidad</label>

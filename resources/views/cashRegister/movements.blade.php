@@ -43,21 +43,25 @@
                 </div>
             </div>
 
-            {{-- GRID DE MÉTODOS --}}
+            {{-- CONCILIACIÓN POR MÉTODO --}}
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                @foreach ($pagosPorMetodo as $metodo => $total)
+                @foreach ($settlementRows as $row)
                     <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                         <div class="flex items-center gap-3 mb-2">
                             <div class="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center">
                                 <i class="fa-solid fa-wallet text-indigo-500 text-xs"></i>
                             </div>
-                            <p class="text-[11px] font-bold text-slate-500 uppercase tracking-tight">{{ $metodo }}
+                            <p class="text-[11px] font-bold text-slate-500 uppercase tracking-tight">{{ $row['label'] }}
                             </p>
                         </div>
                         <p class="text-xl font-bold text-slate-900">
                             <span
-                                class="text-slate-400 text-sm font-medium mr-0.5">{{ $empresa->currency_simbol }}</span>{{ number_format($total, 2) }}
+                                class="text-slate-400 text-sm font-medium mr-0.5">{{ $empresa->currency_simbol }}</span>{{ number_format($row['expected_amount'], 2) }}
                         </p>
+                        <p class="mt-1 text-[9px] font-bold uppercase tracking-wide {{ $row['is_cash'] ? 'text-indigo-500' : 'text-slate-400' }}">{{ $row['is_cash'] ? 'Saldo físico esperado' : 'Cobro digital esperado' }}</p>
+                        @if ($caja->status === 'closed' && $row['counted_amount'] !== null)
+                            <p class="mt-2 text-xs font-semibold {{ (float) $row['difference'] === 0.0 ? 'text-emerald-600' : 'text-rose-600' }}">Declarado: {{ $empresa->currency_simbol }}{{ number_format($row['counted_amount'], 2) }}</p>
+                        @endif
                     </div>
                 @endforeach
             </div>
@@ -88,7 +92,7 @@
                                     @php
                                         $movimientos = collect()
                                             ->merge($cashSales->map(function($sale) {
-                                                $cashPayments = $sale->payments->filter(fn($p) => $p->method?->is_efectivo);
+                                                $cashPayments = $sale->payments;
 
                                                 return [
                                                     'date' => $sale->paid_at,
@@ -145,7 +149,7 @@
                     <div class="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
                         <h4
                             class="text-slate-900 text-xs font-bold uppercase tracking-wider mb-6 border-b border-slate-100 pb-3">
-                            Resumen de Liquidación
+                            Resumen del Turno
                         </h4>
 
                         <div class="space-y-4">
@@ -172,7 +176,7 @@
                             @endif
 
                             <div class="mt-6 pt-6 border-t border-slate-100">
-                                <p class="text-indigo-600 text-[10px] font-bold uppercase mb-1">Efectivo Total en Caja</p>
+                                <p class="text-indigo-600 text-[10px] font-bold uppercase mb-1">Efectivo físico esperado</p>
                                 <p class="text-4xl font-bold text-slate-900 tracking-tight">
                                     <span
                                         class="text-lg font-medium text-slate-400 mr-1">{{ $empresa->currency_simbol }}</span>{{ number_format($caja->current_amount, 2) }}
@@ -182,11 +186,13 @@
 
                         @if ($caja->status == 'open' || $caja->status == 'abierto')
                             @can('cajas.cerrar')
+                                @if ($caja->opened_by === auth()->id() || auth()->user()->hasRole('admin'))
                                 <button onclick="confirmarCierreCaja('{{ $caja->id }}')"
                                     class="w-full mt-6 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all py-3 rounded-lg font-bold text-xs flex items-center justify-center gap-2">
                                     <i class="fa-solid fa-lock"></i>
                                     CERRAR CAJA
                                 </button>
+                                @endif
                             @endcan
                         @else
                             <div
@@ -227,11 +233,10 @@
         function confirmarCierreCaja(cajaId) {
             Swal.fire({
                 title: '¿Cerrar caja?',
-                text: "Registra el efectivo contado para cerrar la sesión.",
+                text: "Cuenta el efectivo físico antes de registrar el cierre.",
                 icon: 'warning',
                 input: 'number',
                 inputLabel: 'Efectivo contado',
-                inputValue: '{{ $caja->current_amount }}',
                 inputAttributes: { min: '0', step: '0.01' },
                 showCancelButton: true,
                 confirmButtonColor: '#4f46e5',
@@ -242,12 +247,41 @@
                 inputValidator: (value) => !value && value !== '0' ? 'Ingresa el efectivo contado.' : undefined,
             }).then((result) => {
                 if (result.isConfirmed) {
-                    cerrarCajaFetch(cajaId, result.value);
+                    confirmarPagosDigitales(cajaId, result.value);
                 }
             });
         }
 
-        function cerrarCajaFetch(cajaId, countedAmount) {
+        const settlementRows = @json($settlementRows);
+
+        function confirmarPagosDigitales(cajaId, countedAmount) {
+            const digitalRows = settlementRows.filter((row) => !row.is_cash);
+            if (!digitalRows.length) {
+                cerrarCajaFetch(cajaId, countedAmount, []);
+                return;
+            }
+
+            const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' })[character]);
+            const inputs = digitalRows.map((row) => `<label class="mb-3 block text-left text-xs font-bold text-slate-600">${escapeHtml(row.label)}<input id="payment-method-${row.payment_method_id}" class="swal2-input !mx-0 !mt-1 !w-full" type="number" min="0" step="0.01" value="${row.expected_amount}"></label>`).join('');
+
+            Swal.fire({
+                title: 'Confirma pagos digitales',
+                html: `<p class="mb-4 text-sm text-slate-500">Compara estos montos con tarjeta, Yape, Plin o transferencia.</p>${inputs}`,
+                showCancelButton: true,
+                confirmButtonText: 'Cerrar turno',
+                cancelButtonText: 'Volver',
+                preConfirm: () => digitalRows.map((row) => ({
+                    payment_method_id: row.payment_method_id,
+                    counted_amount: document.getElementById(`payment-method-${row.payment_method_id}`).value,
+                })),
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    cerrarCajaFetch(cajaId, countedAmount, result.value);
+                }
+            });
+        }
+
+        function cerrarCajaFetch(cajaId, countedAmount, paymentClosures) {
             Swal.fire({
                 title: 'Procesando...',
                 didOpen: () => Swal.showLoading(),
@@ -261,7 +295,8 @@
                         'Accept': 'application/json'
                     },
                     body: JSON.stringify({
-                        counted_amount: countedAmount
+                        counted_amount: countedAmount,
+                        payment_closures: paymentClosures,
                     })
                 })
                 .then(response => response.json())

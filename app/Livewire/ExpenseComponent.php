@@ -45,7 +45,7 @@ class ExpenseComponent extends Component
     public function mount()
     {
         $this->cashRegisters = CashRegister::where('status', 'open')
-            ->orWhere('id', $this->cash_register_id)
+            ->where('opened_by', auth()->id())
             ->orderBy('name', 'asc')
             ->get();
 
@@ -181,7 +181,7 @@ class ExpenseComponent extends Component
                     ->keyBy('id');
 
                 if ($registers->count() !== $registerIds->count()
-                    || $registers->contains(fn (CashRegister $register) => $register->status !== 'open')) {
+                    || $registers->contains(fn (CashRegister $register) => $register->status !== 'open' || $register->opened_by !== auth()->id())) {
                     throw new \RuntimeException('No se puede modificar una caja cerrada.');
                 }
 
@@ -251,7 +251,7 @@ class ExpenseComponent extends Component
         $this->payment_method_id = $expense->payment_method_id;
         $this->concept           = $expense->concept;
         $this->description       = $expense->description;
-        $this->amount            = $expense->amount;
+        $this->amount            = number_format((float) $expense->amount, 2, '.', '');
         $this->expense_date      = $expense->expense_date->format('Y-m-d\TH:i');
 
         $this->openModal();

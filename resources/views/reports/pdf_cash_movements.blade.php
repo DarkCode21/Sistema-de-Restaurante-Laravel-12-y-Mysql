@@ -212,7 +212,7 @@
                 $movimientos = collect()
                     ->merge(
                         $cashSales->map(function ($sale) {
-                            $cashPayments = $sale->payments->filter(fn($p) => $p->method?->is_efectivo);
+                $cashPayments = $sale->payments;
 
                             return [
                                 'time' => $sale->paid_at,

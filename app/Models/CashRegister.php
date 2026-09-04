@@ -56,4 +56,9 @@ class CashRegister extends Model
     {
         return $this->hasMany(Expense::class, 'cash_register_id');
     }
+
+    public function paymentClosures(): HasMany
+    {
+        return $this->hasMany(CashRegisterPaymentClosure::class);
+    }
 }

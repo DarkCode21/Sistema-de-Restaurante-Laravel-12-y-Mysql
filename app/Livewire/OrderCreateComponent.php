@@ -382,6 +382,7 @@ class OrderCreateComponent extends Component
             $detail->ingredientUsages()->create([
                 'ingredient_id' => $ingredient->id,
                 'quantity' => $required,
+                'unit_cost' => $ingredient->unit_cost,
             ]);
         }
     }
@@ -411,8 +412,18 @@ class OrderCreateComponent extends Component
                 throw new \RuntimeException('Stock insuficiente para un insumo de la receta.');
             }
 
-            $difference > 0 ? $ingredient->decrement('stock', $amount) : $ingredient->increment('stock', $amount);
-            $usage->update(['quantity' => (float) $usage->quantity + ($difference > 0 ? $amount : -$amount)]);
+            if ($difference > 0) {
+                $ingredient->decrement('stock', $amount);
+                $detail->ingredientUsages()->create([
+                    'ingredient_id' => $ingredient->id,
+                    'quantity' => $amount,
+                    'unit_cost' => $ingredient->unit_cost,
+                ]);
+                continue;
+            }
+
+            $ingredient->increment('stock', $amount);
+            $usage->update(['quantity' => (float) $usage->quantity - $amount]);
         }
     }
 

@@ -84,7 +84,11 @@ class CashRegisterComponent extends Component
                     ->first();
 
                 if (!$terminal || CashRegister::query()->where('cash_terminal_id', $this->terminal_id)->where('status', 'open')->exists()) {
-                    return false;
+                    return 'terminal_busy';
+                }
+
+                if (CashRegister::query()->where('opened_by', Auth::id())->where('status', 'open')->exists()) {
+                    return 'user_busy';
                 }
 
                 CashRegister::create([
@@ -97,11 +101,13 @@ class CashRegisterComponent extends Component
                     'opened_at' => now(),
                 ]);
 
-                return true;
+                return 'opened';
             });
 
-            if (!$opened) {
-                $this->addError('terminal_id', 'Esta caja ya tiene una sesión abierta.');
+            if ($opened !== 'opened') {
+                $this->addError('terminal_id', $opened === 'user_busy'
+                    ? 'Cierra tu turno actual antes de abrir otro.'
+                    : 'Esta caja ya tiene una sesión abierta.');
                 return;
             }
         } else {
@@ -114,6 +120,10 @@ class CashRegisterComponent extends Component
 
                 if (!$register) {
                     return 'closed';
+                }
+
+                if (!$this->canManageTurn($register)) {
+                    return 'forbidden';
                 }
 
                 $hasMovements = $register->sales()->exists() || $register->expenses()->exists();
@@ -148,11 +158,20 @@ class CashRegisterComponent extends Component
                 ]);
                 return;
             }
+
+            if ($updated === 'forbidden') {
+                $this->dispatch('swal', [
+                    'title' => 'Turno de otro cajero',
+                    'text' => 'Solo su cajero o un administrador puede modificarlo.',
+                    'icon' => 'warning',
+                ]);
+                return;
+            }
         }
 
         $this->dispatch('swal', [
-            'title' => $this->cash_register_id ? '¡Actualizado!' : '¡Caja Abierta!',
-            'text'  => 'El registro de caja se ha procesado correctamente',
+            'title' => $this->cash_register_id ? '¡Actualizado!' : '¡Turno abierto!',
+            'text'  => 'El turno de caja se ha procesado correctamente',
             'icon'  => 'success',
         ]);
 
@@ -173,9 +192,18 @@ class CashRegisterComponent extends Component
     public function edit($id)
     {
         $register = CashRegister::findOrFail($id);
+        if (!$this->canManageTurn($register)) {
+            $this->dispatch('swal', [
+                'title' => 'Turno de otro cajero',
+                'text' => 'Solo su cajero o un administrador puede modificarlo.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
         $this->cash_register_id = $register->id;
         $this->terminal_id = $register->cash_terminal_id;
-        $this->opening_amount = $register->opening_amount;
+        $this->opening_amount = number_format((float) $register->opening_amount, 2, '.', '');
         $this->notes = $register->notes;
 
         $this->openModal();
@@ -194,6 +222,10 @@ class CashRegisterComponent extends Component
                 ->whereKey($id)
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            if (!$this->canManageTurn($register)) {
+                return false;
+            }
 
             if ($register->status !== 'open' || $register->sales()->exists() || $register->expenses()->exists()) {
                 return false;
@@ -218,5 +250,10 @@ class CashRegisterComponent extends Component
             'text'  => 'Registro de caja eliminado',
             'icon'  => 'success',
         ]);
+    }
+
+    private function canManageTurn(CashRegister $register): bool
+    {
+        return $register->opened_by === Auth::id() || auth()->user()?->hasRole('admin');
     }
 }

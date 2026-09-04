@@ -17,6 +17,7 @@ class IngredientComponent extends Component
     public $unit = 'unit';
     public $stock = 0;
     public $minimum_stock = 0;
+    public $unit_cost = null;
     public $search = '';
     public $isOpen = false;
 
@@ -47,8 +48,9 @@ class IngredientComponent extends Component
         $this->ingredient_id = $ingredient->id;
         $this->name = $ingredient->name;
         $this->unit = $ingredient->unit;
-        $this->stock = $ingredient->stock;
-        $this->minimum_stock = $ingredient->minimum_stock;
+        $this->stock = $this->numberForInput($ingredient->stock);
+        $this->minimum_stock = $this->numberForInput($ingredient->minimum_stock);
+        $this->unit_cost = $this->moneyForInput($ingredient->unit_cost);
         $this->isOpen = true;
     }
 
@@ -65,6 +67,7 @@ class IngredientComponent extends Component
             'unit' => ['required', Rule::in(Ingredient::UNITS)],
             'stock' => 'required|numeric|min:0',
             'minimum_stock' => 'required|numeric|min:0',
+            'unit_cost' => 'nullable|numeric|min:0',
         ]);
 
         Ingredient::updateOrCreate(['id' => $this->ingredient_id], [
@@ -72,6 +75,7 @@ class IngredientComponent extends Component
             'unit' => $this->unit,
             'stock' => $this->stock,
             'minimum_stock' => $this->minimum_stock,
+            'unit_cost' => $this->unit_cost === '' ? null : $this->unit_cost,
         ]);
 
         $this->dispatch('swal', [
@@ -106,8 +110,24 @@ class IngredientComponent extends Component
 
     private function resetInputFields(): void
     {
-        $this->reset(['ingredient_id', 'name', 'stock', 'minimum_stock']);
+        $this->reset(['ingredient_id', 'name', 'stock', 'minimum_stock', 'unit_cost']);
         $this->unit = 'unit';
         $this->resetValidation();
+    }
+
+    private function numberForInput($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = (string) $value;
+
+        return str_contains($value, '.') ? rtrim(rtrim($value, '0'), '.') : $value;
+    }
+
+    private function moneyForInput($value): ?string
+    {
+        return $value === null ? null : number_format((float) $value, 2, '.', '');
     }
 }

@@ -51,9 +51,9 @@
                                 <td class="px-8 py-5">
                                     <p
                                         class="text-sm font-bold text-slate-700 group-hover:text-blue-600 transition-colors">
-                                        {{ $reg->name }}</p>
+                                         {{ $reg->terminal?->name ?? $reg->name }}</p>
                                     <p class="text-[10px] text-slate-400 font-medium italic">Abierto por:
-                                        {{ $reg->opener->name ?? 'N/A' }}</p>
+                                         {{ $reg->opener->name ?? 'N/A' }} · {{ $reg->opened_at?->format('d/m/Y H:i') }}</p>
                                 </td>
                                 <td class="px-8 py-5 text-center">
                                     <span
@@ -139,7 +139,7 @@
                 <!-- Cabecera del Modal -->
                 <div class="px-8 py-6 bg-slate-50 border-b">
                     <h3 class="text-lg font-black text-slate-800">
-                        {{ $cash_register_id ? 'Editar Configuración' : 'Apertura de Caja' }}
+                        {{ $cash_register_id ? 'Editar Apertura' : 'Apertura de Caja' }}
                     </h3>
                     <p class="text-xs text-slate-500 font-medium">Complete la información para continuar</p>
                 </div>
@@ -148,17 +148,30 @@
                 <form wire:submit.prevent="store">
                     <div class="px-8 py-8 space-y-4">
 
-                        <!-- Nombre de la Caja -->
-                        <div>
-                            <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">
-                                Nombre de la Caja
-                            </label>
-                            <input wire:model="name" type="text" placeholder="Ej: Caja Principal, Caja 2..."
-                                class="w-full border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all mt-1">
-                            @error('name')
-                                <span class="text-red-500 text-[10px] font-bold mt-1 block">{{ $message }}</span>
-                            @enderror
-                        </div>
+                        @if ($cash_register_id)
+                            <div>
+                                <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Caja física</label>
+                                <div class="mt-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">{{ $terminals->firstWhere('id', $terminal_id)?->name }}</div>
+                            </div>
+                        @else
+                            <div>
+                                <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Caja física</label>
+                                <select wire:model="terminal_id" class="mt-1 w-full rounded-xl border-slate-200 px-4 py-3 text-sm focus:border-orange-500 focus:ring-orange-500">
+                                    @foreach ($terminals as $terminal)
+                                        <option value="{{ $terminal->id }}">{{ $terminal->name }}</option>
+                                    @endforeach
+                                </select>
+                                @error('terminal_id') <span class="mt-1 block text-[10px] font-bold text-red-500">{{ $message }}</span> @enderror
+                                <button type="button" wire:click="$toggle('showTerminalForm')" class="mt-2 text-[10px] font-bold text-slate-400 hover:text-orange-600">{{ $showTerminalForm ? 'Cancelar nueva caja' : '+ Agregar otra caja física' }}</button>
+                                @if ($showTerminalForm)
+                                    <div class="mt-2 flex gap-2">
+                                        <input wire:model="new_terminal_name" type="text" placeholder="Ej: Caja terraza" class="min-w-0 flex-1 rounded-lg border-slate-200 px-3 py-2 text-xs focus:border-orange-500 focus:ring-orange-500">
+                                        <button type="button" wire:click="addTerminal" class="rounded-lg bg-slate-100 px-3 text-[10px] font-bold text-slate-700 hover:bg-slate-200">Agregar</button>
+                                    </div>
+                                    @error('new_terminal_name') <span class="mt-1 block text-[10px] font-bold text-red-500">{{ $message }}</span> @enderror
+                                @endif
+                            </div>
+                        @endif
 
                         <!-- Monto Inicial -->
                         <div>

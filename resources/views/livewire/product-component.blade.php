@@ -392,10 +392,16 @@
 
                                     @foreach ($group['values'] as $valueIndex => $value)
                                         <div wire:key="option-value-{{ $groupIndex }}-{{ $valueIndex }}" class="grid grid-cols-[1fr_7rem_auto] gap-2">
-                                            <input wire:model="option_groups.{{ $groupIndex }}.values.{{ $valueIndex }}.name" type="text" placeholder="Ej.: Medio"
-                                                class="rounded-lg border-slate-200 px-3 py-2 text-xs">
-                                            <input wire:model="option_groups.{{ $groupIndex }}.values.{{ $valueIndex }}.price_adjustment" type="number" step="0.01" placeholder="Ajuste S/"
-                                                class="rounded-lg border-slate-200 px-3 py-2 text-xs">
+                                            <div>
+                                                <label class="mb-1 block text-[9px] font-bold uppercase text-slate-400">Valor</label>
+                                                <input wire:model="option_groups.{{ $groupIndex }}.values.{{ $valueIndex }}.name" type="text" placeholder="Ej.: Medio"
+                                                    class="w-full rounded-lg border-slate-200 px-3 py-2 text-xs">
+                                            </div>
+                                            <div>
+                                                <label class="mb-1 block text-[9px] font-bold uppercase text-slate-400">Precio extra S/</label>
+                                                <input wire:model="option_groups.{{ $groupIndex }}.values.{{ $valueIndex }}.price_adjustment" type="number" step="0.01" placeholder="0.00" aria-label="Precio adicional"
+                                                    class="w-full rounded-lg border-slate-200 px-3 py-2 text-xs">
+                                            </div>
                                             <button type="button" wire:click="removeOptionValue({{ $groupIndex }}, {{ $valueIndex }})" class="px-2 text-rose-500">
                                                 <i class="fa-solid fa-xmark"></i>
                                             </button>

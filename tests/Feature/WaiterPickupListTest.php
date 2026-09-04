@@ -78,6 +78,8 @@ it('shows pickup only for ready items in the order list', function () {
     expect($pendingDetail->refresh()->cooking_status)->toBe('pending')
         ->and($drinkDetail->refresh()->cooking_status)->toBe('served');
 
+    $list->assertDontSeeHtml('aria-label="Marcar como entregado Parrilla para lista"');
+
     $pendingDetail->update(['cooking_status' => 'ready']);
 
     $list->call('refreshReadyOrderAlerts')

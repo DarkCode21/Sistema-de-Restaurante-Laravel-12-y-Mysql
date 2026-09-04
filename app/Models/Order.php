@@ -84,7 +84,7 @@ class Order extends Model
     public function getServiceLabelAttribute(): string
     {
         return $this->order_type === 'dine_in'
-            ? 'Mesa ' . ($this->table?->name ?? 'sin mesa')
+            ? ($this->getRelationValue('table')?->name ?? 'Mesa sin asignar')
             : $this->order_type_label;
     }
 }

@@ -74,7 +74,7 @@
                     <thead>
                         <tr class="text-slate-400 text-[10px] uppercase tracking-[0.15em] bg-slate-50/50">
                             <th class="px-8 py-5 font-bold">Concepto</th>
-                            <th class="px-8 py-5 font-bold">Caja / Método</th> {{-- Combinamos las cabeceras --}}
+                            <th class="px-8 py-5 font-bold">Origen / Método</th>
                             <th class="px-8 py-5 font-bold">Monto</th>
                             <th class="px-8 py-5 font-bold">Fecha / Usuario</th>
                             <th class="px-8 py-5 font-bold text-right">Acciones</th>
@@ -107,17 +107,15 @@
                                     </div>
                                 </td>
 
-                                {{-- CAJA Y MÉTODO DE PAGO (UNO ABAJO DEL OTRO) --}}
+                                {{-- ORIGEN Y MÉTODO DE PAGO --}}
                                 <td class="px-8 py-4">
                                     <div class="flex flex-col items-start gap-1.5">
-                                        {{-- Badge de la Caja --}}
                                         <span
                                             class="inline-flex items-center gap-1 text-xs font-bold text-slate-600 bg-slate-100/80 border border-slate-200/60 px-2.5 py-1 rounded-xl shadow-sm">
-                                            <i class="fa-solid fa-cash-register text-[10px] text-slate-400"></i>
-                                            {{ $expense->cashRegister->name }}
+                                            <i class="fa-solid {{ $expense->cashRegister ? 'fa-cash-register' : 'fa-building-columns' }} text-[10px] text-slate-400"></i>
+                                            {{ $expense->cashRegister?->name ?? 'Gasto general' }}
                                         </span>
 
-                                        {{-- Badge del Método de Pago justo debajo --}}
                                         @if ($expense->paymentMethod->is_efectivo)
                                             <span
                                                 class="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200/60 px-2.5 py-1 rounded-xl shadow-sm shadow-amber-50/50">
@@ -232,26 +230,9 @@
                         </div>
 
                         <div>
-                            <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Caja
-                                Afectada</label>
-                            <select wire:model="cash_register_id"
-                                class="w-full border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all mt-1">
-                                <option value="">Seleccionar caja...</option>
-                                @foreach ($cashRegisters as $register)
-                                    <option value="{{ $register->id }}">{{ $register->name }}
-                                        ({{ $empresa->currency_simbol ?? 'S/' }}{{ number_format($register->current_amount, 2) }})
-                                    </option>
-                                @endforeach
-                            </select>
-                            @error('cash_register_id')
-                                <span class="text-red-500 text-[10px] font-bold mt-1 block">{{ $message }}</span>
-                            @enderror
-                        </div>
-
-                        <div>
                             <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Método de
                                 Pago</label>
-                            <select wire:model="payment_method_id"
+                            <select wire:model.live="payment_method_id"
                                 class="w-full border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all mt-1">
                                 <option value="">Seleccionar método...</option>
                                 @foreach ($paymentMethods as $method)
@@ -262,6 +243,26 @@
                                 <span class="text-red-500 text-[10px] font-bold mt-1 block">{{ $message }}</span>
                             @enderror
                         </div>
+
+                        @if ($selectedPaymentMethod?->is_efectivo)
+                            <div>
+                                <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Caja afectada</label>
+                                <select wire:model="cash_register_id"
+                                    class="w-full border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all mt-1">
+                                    <option value="">Seleccionar caja...</option>
+                                    @foreach ($cashRegisters as $register)
+                                        <option value="{{ $register->id }}">{{ $register->name }}
+                                            ({{ $empresa->currency_simbol ?? 'S/' }}{{ number_format($register->current_amount, 2) }})
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('cash_register_id')
+                                    <span class="text-red-500 text-[10px] font-bold mt-1 block">{{ $message }}</span>
+                                @enderror
+                            </div>
+                        @elseif ($payment_method_id)
+                            <p class="self-end text-[10px] font-bold text-slate-400">Yape y tarjeta se registran como gasto general.</p>
+                        @endif
 
                         <div>
                             <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Monto del

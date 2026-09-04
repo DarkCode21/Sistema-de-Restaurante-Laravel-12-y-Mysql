@@ -24,7 +24,7 @@
                             <i class="fa-solid fa-chevron-left text-[8px]"></i> Volver
                         </a>
                         <h1 class="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                            {{ $caja->name }}
+                            {{ $caja->terminal?->name ?? $caja->name }}
                             @if ($caja->status == 'closed' || $caja->status == 'cerrado')
                                 <span
                                     class="bg-slate-100 text-slate-500 text-[10px] px-2 py-0.5 rounded-full uppercase italic">Cerrada</span>
@@ -71,7 +71,7 @@
                             <h3 class="text-slate-800 font-bold text-xs uppercase">Cronología</h3>
                             <span
                                 class="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-md italic">
-                                {{ $caja->sales->count() + $gastos->count() }} ops
+                                {{ $cashSales->count() + $gastos->count() }} ops
                             </span>
                         </div>
                         <div class="overflow-x-auto">
@@ -87,13 +87,15 @@
                                 <tbody class="divide-y divide-slate-50">
                                     @php
                                         $movimientos = collect()
-                                            ->merge($caja->sales->map(function($sale) {
+                                            ->merge($cashSales->map(function($sale) {
+                                                $cashPayments = $sale->payments->filter(fn($p) => $p->method?->is_efectivo);
+
                                                 return [
-                                                    'date' => $sale->created_at,
+                                                    'date' => $sale->paid_at,
                                                     'type' => 'ingreso',
                                                     'concept' => 'Venta realizada',
-                                                    'methods' => $sale->payments->map(fn($p) => $p->method->name)->implode(', '),
-                                                    'amount' => $sale->total
+                                                    'methods' => $cashPayments->map(fn($p) => $p->method->name)->implode(', '),
+                                                    'amount' => $cashPayments->sum('amount')
                                                 ];
                                             }))
                                             ->merge($gastos->map(function($gasto) {
@@ -158,6 +160,17 @@
                                 <span class="font-semibold">-{{ $empresa->currency_simbol }}{{ number_format($gastos->sum('amount'), 2) }}</span>
                             </div>
 
+                            @if ($caja->status === 'closed' && $caja->closing_amount !== null)
+                                <div class="flex justify-between items-center text-sm italic">
+                                    <span class="text-slate-500">Efectivo contado</span>
+                                    <span class="font-semibold text-slate-700">{{ $empresa->currency_simbol }}{{ number_format($caja->closing_amount, 2) }}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm italic {{ $caja->difference == 0 ? 'text-emerald-600' : 'text-rose-600' }}">
+                                    <span>Diferencia</span>
+                                    <span class="font-semibold">{{ $empresa->currency_simbol }}{{ number_format($caja->difference, 2) }}</span>
+                                </div>
+                            @endif
+
                             <div class="mt-6 pt-6 border-t border-slate-100">
                                 <p class="text-indigo-600 text-[10px] font-bold uppercase mb-1">Efectivo Total en Caja</p>
                                 <p class="text-4xl font-bold text-slate-900 tracking-tight">
@@ -214,22 +227,27 @@
         function confirmarCierreCaja(cajaId) {
             Swal.fire({
                 title: '¿Cerrar caja?',
-                text: "Se finalizarán las operaciones del día.",
+                text: "Registra el efectivo contado para cerrar la sesión.",
                 icon: 'warning',
+                input: 'number',
+                inputLabel: 'Efectivo contado',
+                inputValue: '{{ $caja->current_amount }}',
+                inputAttributes: { min: '0', step: '0.01' },
                 showCancelButton: true,
                 confirmButtonColor: '#4f46e5',
                 cancelButtonColor: '#f43f5e',
                 confirmButtonText: 'Sí, cerrar',
                 cancelButtonText: 'Cancelar',
-                reverseButtons: true
+                reverseButtons: true,
+                inputValidator: (value) => !value && value !== '0' ? 'Ingresa el efectivo contado.' : undefined,
             }).then((result) => {
                 if (result.isConfirmed) {
-                    cerrarCajaFetch(cajaId);
+                    cerrarCajaFetch(cajaId, result.value);
                 }
             });
         }
 
-        function cerrarCajaFetch(cajaId) {
+        function cerrarCajaFetch(cajaId, countedAmount) {
             Swal.fire({
                 title: 'Procesando...',
                 didOpen: () => Swal.showLoading(),
@@ -243,7 +261,7 @@
                         'Accept': 'application/json'
                     },
                     body: JSON.stringify({
-                        closed_at: new Date().toISOString()
+                        counted_amount: countedAmount
                     })
                 })
                 .then(response => response.json())

@@ -17,16 +17,19 @@ class CashRegisterController extends Controller
     public function movements($id, Request $request)
     {
         $realId = Crypt::decrypt($id);
-        $caja = CashRegister::with(['opener', 'sales.payments.method', 'expenses.paymentMethod'])->findOrFail($realId);
+        $caja = CashRegister::with(['terminal', 'opener', 'sales.payments.method', 'expenses.paymentMethod'])->findOrFail($realId);
 
-        $gastos = $caja->expenses;
+        $cashSales = $caja->sales->filter(fn ($sale) => $sale->payments
+            ->contains(fn ($payment) => $payment->method?->is_efectivo));
+        $gastos = $caja->expenses->filter(fn ($expense) => $expense->paymentMethod?->is_efectivo);
 
-        $pagosPorMetodo = $caja->sales->flatMap->payments
+        $pagosPorMetodo = $cashSales->flatMap->payments
+            ->filter(fn ($payment) => $payment->method?->is_efectivo)
             ->groupBy(fn($p) => $p->method->name)
             ->map(fn($g) => $g->sum('amount'));
 
         foreach ($gastos as $gasto) {
-            $metodoNombre = $gasto->paymentMethod->name ?? 'N/A';
+            $metodoNombre = $gasto->paymentMethod->name;
             if (isset($pagosPorMetodo[$metodoNombre])) {
                 $pagosPorMetodo[$metodoNombre] -= $gasto->amount;
             } else {
@@ -35,17 +38,22 @@ class CashRegisterController extends Controller
         }
 
         if ($request->action == 'pdf') {
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('reports.pdf_cash_movements', compact('caja', 'pagosPorMetodo', 'gastos'))
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('reports.pdf_cash_movements', compact('caja', 'cashSales', 'pagosPorMetodo', 'gastos'))
                 ->setPaper('a4', 'portrait');
             return $pdf->stream("Movimientos_Caja_{$caja->id}.pdf");
         }
 
-        return view('cashRegister.movements', compact('caja', 'pagosPorMetodo', 'gastos', 'id'));
+        return view('cashRegister.movements', compact('caja', 'cashSales', 'pagosPorMetodo', 'gastos', 'id'));
     }
 
-    public function close($id)
+    public function close($id, Request $request)
     {
-        $caja = DB::transaction(function () use ($id) {
+        $request->validate([
+            'counted_amount' => ['required', 'numeric', 'min:0'],
+            'closing_notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $caja = DB::transaction(function () use ($id, $request) {
             $caja = CashRegister::query()
                 ->whereKey($id)
                 ->lockForUpdate()
@@ -57,6 +65,9 @@ class CashRegisterController extends Controller
                 'status' => 'closed',
                 'closed_at' => now(),
                 'closed_by' => auth()->id(),
+                'closing_amount' => $request->counted_amount,
+                'difference' => (float) $request->counted_amount - (float) $caja->current_amount,
+                'closing_notes' => trim((string) $request->closing_notes) ?: null,
             ]);
 
             return $caja;
@@ -66,6 +77,7 @@ class CashRegisterController extends Controller
             'success' => true,
             'message' => 'Caja cerrada con éxito',
             'cash_register_id' => $caja->id,
+            'difference' => $caja->difference,
         ]);
     }
 }

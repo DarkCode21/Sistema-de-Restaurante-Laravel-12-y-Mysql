@@ -35,6 +35,13 @@ class ExpenseComponent extends Component
     public function updatingStartDate() { $this->resetPage(); }
     public function updatingEndDate() { $this->resetPage(); }
 
+    public function updatedPaymentMethodId(): void
+    {
+        if ($this->paymentMethods->firstWhere('id', (int) $this->payment_method_id)?->is_efectivo === false) {
+            $this->cash_register_id = '';
+        }
+    }
+
     public function mount()
     {
         $this->cashRegisters = CashRegister::where('status', 'open')
@@ -73,8 +80,9 @@ class ExpenseComponent extends Component
 
         $pdfUrl   = route('expenses.export.pdf', $exportParams);
         $excelUrl = route('expenses.export.excel', $exportParams);
+        $selectedPaymentMethod = $this->paymentMethods->firstWhere('id', (int) $this->payment_method_id);
 
-        return view('livewire.expense-component', compact('expenses', 'pdfUrl', 'excelUrl'));
+        return view('livewire.expense-component', compact('expenses', 'pdfUrl', 'excelUrl', 'selectedPaymentMethod'));
     }
 
     public function create()
@@ -103,7 +111,7 @@ class ExpenseComponent extends Component
     public function store()
     {
         $rules = [
-            'cash_register_id'  => 'required|exists:cash_registers,id',
+            'cash_register_id'  => 'nullable|exists:cash_registers,id',
             'payment_method_id' => 'required|exists:payment_methods,id',
             'concept'           => 'required|string|min:3|max:255',
             'description'       => 'nullable|string|max:500',
@@ -113,8 +121,15 @@ class ExpenseComponent extends Component
 
         $this->validate($rules);
 
+        $paymentMethod = PaymentMethod::find($this->payment_method_id);
+
+        if ($paymentMethod?->is_efectivo && !$this->cash_register_id) {
+            $this->addError('cash_register_id', 'Selecciona una caja abierta para registrar un gasto en efectivo.');
+            return;
+        }
+
         $data = [
-            'cash_register_id'  => $this->cash_register_id,
+            'cash_register_id'  => $paymentMethod?->is_efectivo ? $this->cash_register_id : null,
             'payment_method_id' => $this->payment_method_id,
             'user_id'           => auth()->id(),
             'concept'           => $this->concept,
@@ -149,7 +164,10 @@ class ExpenseComponent extends Component
                     throw new \RuntimeException('El método de pago ya no está disponible.');
                 }
 
-                $registerIds = collect([$this->cash_register_id, $oldExpense?->cash_register_id])
+                $registerIds = collect([
+                    $newMethod->is_efectivo ? $data['cash_register_id'] : null,
+                    $oldMethod?->is_efectivo ? $oldExpense?->cash_register_id : null,
+                ])
                     ->filter()
                     ->map(fn ($id) => (int) $id)
                     ->unique()
@@ -173,10 +191,11 @@ class ExpenseComponent extends Component
                     $oldRegister->save();
                 }
 
-                $newRegister = $registers->get((int) $this->cash_register_id);
                 $amount = (float) $this->amount;
 
                 if ($newMethod->is_efectivo) {
+                    $newRegister = $registers->get((int) $data['cash_register_id']);
+
                     if ($amount > $newRegister->current_amount) {
                         throw new \RuntimeException(
                             'El monto del gasto supera el dinero disponible en caja ('
@@ -218,7 +237,7 @@ class ExpenseComponent extends Component
     {
         $expense = Expense::findOrFail($id);
 
-        if ($expense->cashRegister?->status !== 'open') {
+        if ($expense->paymentMethod?->is_efectivo && $expense->cashRegister?->status !== 'open') {
             $this->dispatch('swal', [
                 'title' => 'Caja cerrada',
                 'text' => 'Los gastos de una caja cerrada no se pueden modificar.',
@@ -252,17 +271,17 @@ class ExpenseComponent extends Component
                     ->whereKey($id)
                     ->lockForUpdate()
                     ->firstOrFail();
-                $register = CashRegister::query()
-                    ->whereKey($expense->cash_register_id)
-                    ->where('status', 'open')
-                    ->lockForUpdate()
-                    ->first();
-
-                if (!$register) {
-                    throw new \RuntimeException('No se puede modificar una caja cerrada.');
-                }
-
                 if ($expense->paymentMethod?->is_efectivo) {
+                    $register = CashRegister::query()
+                        ->whereKey($expense->cash_register_id)
+                        ->where('status', 'open')
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$register) {
+                        throw new \RuntimeException('No se puede modificar una caja cerrada.');
+                    }
+
                     $register->increment('current_amount', $expense->amount);
                 }
 

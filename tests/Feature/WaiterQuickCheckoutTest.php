@@ -90,7 +90,8 @@ it('shows quick checkout in every waiter screen only after kitchen service is co
         ->assertSee('Cobrar y liberar mesa');
 
     Livewire::actingAs($user)->test(TableComponent::class)
-        ->assertSee('Cobrar y liberar mesa');
+        ->call('selectTable', $servedTable->id)
+        ->assertSee('Cobrar');
 });
 
 it('allows a waiter with checkout permission to open the quick payment page', function () {

@@ -49,6 +49,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/boxes/{id}/close', [CashRegisterController::class, 'close'])->name('boxes.close')->middleware('can:cajas.cerrar');
 
     Route::get('/tables', [CrudController::class, 'table'])->name('tables.index')->middleware('can:mesas.ver');
+    Route::view('/restaurant-layout', 'restaurant-layout.index')->name('restaurant-layout.index')->middleware('can:empresa.editar');
     Route::get('/ingredients', [CrudController::class, 'ingredient'])->name('ingredients.index')->middleware('can:productos.ver');
     Route::get('/promotions', [CrudController::class, 'promotion'])->name('promotions.index')->middleware('can:productos.ver');
 

@@ -6,8 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class Sale extends Model
 {
+    protected $casts = ['paid_at' => 'datetime'];
+
     protected $fillable = [
         'order_id',
+        'customer_name',
         'cash_register_id',
         'subtotal',
         'tax',

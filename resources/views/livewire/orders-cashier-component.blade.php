@@ -38,6 +38,7 @@
                             @php
                                 $serviceStatus = $detail->service_status;
                             @endphp
+                            @if (!$order->sale)
                             <div class="flex items-center gap-2 mt-1">
                                 <label class="relative inline-flex items-center cursor-pointer scale-75 origin-left">
                                     <input type="checkbox" wire:model.live="selectedDetails.{{ $order->id }}.{{ $detail->id }}"
@@ -49,6 +50,7 @@
                                         class="ml-2 text-[11px] font-bold text-slate-400 peer-checked:text-orange-600 uppercase">Cobrar</span>
                                 </label>
                             </div>
+                            @endif
                             <div
                                 class="group relative bg-white p-3 pt-5 rounded-2xl border border-slate-100 shadow-sm transition-all">
                                 <div class="absolute -top-2.5 left-3">
@@ -78,7 +80,7 @@
                                             </p>
                                             @if (!empty($detail->selected_options))
                                                 <p class="mt-1 text-[10px] font-black text-orange-600">
-                                                    {{ collect($detail->selected_options)->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}
+                                                    {{ collect($detail->selected_options)->map(fn ($option) => preg_replace('/^[^:]+:\s*/', '', $option['group']) . ': ' . $option['value'])->join(' · ') }}
                                                 </p>
                                             @endif
                                             @if ($detail->notes)
@@ -103,7 +105,11 @@
                                 {{ $empresa->currency_simbol }}{{ number_format($order->amount_pending, 2) }}
                             </span>
                         </div>
-                        @if ($order->is_ready_for_checkout)
+                        @if ($order->sale)
+                            <p class="mt-3 border-t border-slate-200/60 pt-3 text-center text-[10px] font-black uppercase tracking-wider text-emerald-600">
+                                Pagado · Pendiente de entrega
+                            </p>
+                        @elseif ($order->is_ready_for_checkout)
                             <div class="grid grid-cols-2 gap-2 mt-1 pt-2 border-t border-slate-200/60">
                                 <button wire:click="openSplitPayment({{ $order->id }})"
                                     @if (count(array_filter($selectedDetails[$order->id] ?? [])) === 0) disabled @endif
@@ -118,9 +124,13 @@
                                 </button>
                             </div>
                         @else
-                            <p class="mt-3 border-t border-slate-200/60 pt-3 text-center text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                Esperando entrega de cocina
-                            </p>
+                            <div class="mt-3 border-t border-slate-200/60 pt-3">
+                                <button wire:click="openFullPayment({{ $order->id }})"
+                                    class="w-full px-5 py-2 bg-orange-600 text-white text-xs font-black uppercase tracking-widest rounded-lg hover:bg-orange-700 shadow-md shadow-orange-100 active:scale-95 transition-all flex items-center justify-center gap-2">
+                                    <i class="fas fa-cash-register text-sm"></i>
+                                    Cobrar adelantado
+                                </button>
+                            </div>
                         @endif
                     </div>
 
@@ -221,8 +231,8 @@
                         <div class="flex items-end gap-2 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
 
                             <div class="flex-1">
-                                <label
-                                    class="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Caja</label>
+                                    <label
+                                        class="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">Caja (solo efectivo)</label>
                                 <select wire:model="boxId"
                                     class="w-full bg-slate-50 border-slate-200 rounded-lg py-1.5 px-3 text-sm">
                                     <option value="">Seleccionar...</option>

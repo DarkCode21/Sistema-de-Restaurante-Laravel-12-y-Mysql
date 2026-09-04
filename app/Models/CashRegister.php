@@ -11,16 +11,25 @@ class CashRegister extends Model
 {
     use SoftDeletes;
 
+    protected $casts = [
+        'opened_at' => 'datetime',
+        'closed_at' => 'datetime',
+    ];
+
     protected $fillable = [
         'name',
+        'cash_terminal_id',
         'opening_amount',
         'current_amount',
+        'closing_amount',
+        'difference',
         'status',
         'opened_by',
         'closed_by',
         'opened_at',
         'closed_at',
-        'notes'
+        'notes',
+        'closing_notes',
     ];
 
     public function opener(): BelongsTo
@@ -31,6 +40,11 @@ class CashRegister extends Model
     public function closer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'closed_by');
+    }
+
+    public function terminal(): BelongsTo
+    {
+        return $this->belongsTo(CashTerminal::class, 'cash_terminal_id');
     }
 
     public function sales(): HasMany

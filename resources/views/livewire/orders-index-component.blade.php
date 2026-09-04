@@ -39,9 +39,9 @@
             <div class="flex items-center gap-3">
                 @can('ordenes.crear')
                     <a href="{{ route('orders.new', 'pickup') }}"
-                        class="rounded-xl bg-slate-100 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:bg-slate-200">Retiro</a>
+                        class="rounded-xl bg-slate-100 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:bg-slate-200">Nuevo retiro</a>
                     <a href="{{ route('orders.new', 'delivery') }}"
-                        class="rounded-xl bg-violet-600 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white hover:bg-violet-700">Delivery</a>
+                        class="rounded-xl bg-violet-600 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white hover:bg-violet-700">Nuevo delivery</a>
                 @endcan
                 <input wire:model.live="search" type="text" placeholder="Buscar pedido..."
                     class="bg-white border border-slate-200 py-2 px-4 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500/20 transition-all w-64 shadow-sm">
@@ -111,7 +111,7 @@
                                             </p>
                                             @if (!empty($detail->selected_options))
                                                 <p class="mt-1 text-[10px] font-black text-orange-600">
-                                                    {{ collect($detail->selected_options)->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}
+                                                    {{ collect($detail->selected_options)->map(fn ($option) => preg_replace('/^[^:]+:\s*/', '', $option['group']) . ': ' . $option['value'])->join(' · ') }}
                                                 </p>
                                             @endif
                                             @if ($detail->notes)
@@ -123,7 +123,7 @@
                                         </div>
                                     </div>
 
-                                    @if ($serviceStatus === 'ready' || (!$detail->requires_kitchen && $detail->components->isEmpty()))
+                                    @if (!in_array($serviceStatus, ['served', 'cancelled'], true) && ($serviceStatus === 'ready' || (!$detail->requires_kitchen && $detail->components->isEmpty())))
                                         <div class="shrink-0 flex flex-col items-end gap-2">
                                             <button wire:click="markDetailAsServed({{ $detail->id }})"
                                                 title="Marcar como entregado"
@@ -170,8 +170,12 @@
                     </div>
 
                     <div class="grid gap-2 p-3 pt-0">
+                        @if ($order->sale && $order->details->contains(fn ($detail) => !in_array($detail->cooking_status, ['served', 'cancelled'], true)))
+                            <p class="rounded-xl bg-emerald-50 px-4 py-2.5 text-center text-[10px] font-black uppercase tracking-wide text-emerald-700">Pagado · pendiente de entrega</p>
+                        @endif
+
                         @can('ordenes.cobrar')
-                            @if ($order->is_ready_for_checkout)
+                            @if (!$order->sale && $order->is_ready_for_checkout)
                                 <a href="{{ route('orders.cashier', ['order' => $order->id, 'quick_checkout' => 1]) }}"
                                     class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
                                     <i class="fa-solid fa-cash-register text-[11px]"></i>

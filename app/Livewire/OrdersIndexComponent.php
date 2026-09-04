@@ -70,6 +70,16 @@ class OrdersIndexComponent extends Component
                 return false;
             }
 
+            $order = Order::query()
+                ->whereKey($detail->order_id)
+                ->where('status', 'abierto')
+                ->lockForUpdate()
+                ->first();
+
+            if (!$order) {
+                return false;
+            }
+
             $components = OrderDetail::query()
                 ->where('parent_detail_id', $detail->id)
                 ->lockForUpdate()
@@ -83,15 +93,23 @@ class OrdersIndexComponent extends Component
 
                 $components->where('cooking_status', 'ready')->each->update(['cooking_status' => 'served']);
                 $detail->update(['cooking_status' => 'served']);
-                return true;
-            }
-
-            if ($detail->cooking_status === 'ready' || (!$detail->requires_kitchen && !in_array($detail->cooking_status, ['served', 'cancelled'], true))) {
+            } elseif ($detail->cooking_status === 'ready' || (!$detail->requires_kitchen && !in_array($detail->cooking_status, ['served', 'cancelled'], true))) {
                 $detail->update(['cooking_status' => 'served']);
-                return true;
+            } else {
+                return false;
             }
 
-            return false;
+            if ($order->sale()->exists() && !$order->details()
+                ->whereNotIn('cooking_status', ['served', 'cancelled'])
+                ->exists()) {
+                $order->update([
+                    'status' => 'cerrado',
+                    'amount_pending' => 0,
+                ]);
+                $order->table?->update(['status' => 'libre']);
+            }
+
+            return true;
         });
 
         if ($updated !== 1) {
@@ -131,6 +149,10 @@ class OrdersIndexComponent extends Component
 
             if (!$order) {
                 return null;
+            }
+
+            if ($order->sale()->exists()) {
+                return 'paid';
             }
 
             $detail = OrderDetail::query()
@@ -180,6 +202,15 @@ class OrdersIndexComponent extends Component
                 'correction_id' => $correction?->id,
             ];
         });
+
+        if ($result === 'paid') {
+            $this->dispatch('swal', [
+                'title' => 'Pedido pagado',
+                'text' => 'No se puede cancelar un pedido pagado. Registra una devolución para corregirlo.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
 
         if (!$result) {
             return;
@@ -231,6 +262,7 @@ class OrdersIndexComponent extends Component
                     ->where('cooking_status', '!=', 'cancelled')
                     ->with(['product', 'components']);
             },
+            'sale',
             'user'
         ])
             ->where('status', 'abierto')

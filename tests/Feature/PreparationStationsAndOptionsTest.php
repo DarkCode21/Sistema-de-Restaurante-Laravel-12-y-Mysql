@@ -244,4 +244,16 @@ it('splits a configurable combo into components for their preparation stations',
         ->and($components->get($potato->id)->selected_options[0]['value'])->toBe('Frita')
         ->and($chicken->refresh()->stock)->toBe(4)
         ->and($potato->refresh()->stock)->toBe(4);
+
+    OrderDetail::where('parent_detail_id', $parent->id)->delete();
+
+    $screen = Livewire::actingAs($user)
+        ->test(OrderCreateComponent::class, ['table' => $table])
+        ->call('increment', "detail-{$parent->id}");
+    $additionalCombo = collect($screen->get('cart'))->first(fn ($item) => !$item['detail_id']);
+
+    expect($components->get($potato->id)->selected_options[0]['group'])->toBe('Tipo')
+        ->and($additionalCombo)->not->toBeNull()
+        ->and($additionalCombo['components'])->toHaveCount(2)
+        ->and($additionalCombo['quantity'])->toBe(1);
 });

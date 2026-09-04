@@ -252,7 +252,7 @@
                         <div class="stack-layout">
                             <div class="stack-item">
                                 <span class="badge badge-caja">
-                                    {{ $expense->cashRegister->name }}
+                                    {{ $expense->cashRegister?->name ?? 'Gasto general' }}
                                 </span>
                             </div>
                             <div class="stack-item">

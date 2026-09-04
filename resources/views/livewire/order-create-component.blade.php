@@ -220,7 +220,7 @@
                                              </h4>
                                             @if (!empty($item['selected_options']))
                                                 <p class="mt-1 text-[10px] font-bold text-orange-600">
-                                                    {{ collect($item['selected_options'])->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}
+                                                     {{ collect($item['selected_options'])->map(fn ($option) => preg_replace('/^[^:]+:\s*/', '', $option['group']) . ': ' . $option['value'])->join(' · ') }}
                                                 </p>
                                             @endif
                                          </div>
@@ -291,7 +291,7 @@
 
                     <div class="flex flex-col gap-2">
                         @can('ordenes.cobrar')
-                            @if ($order?->is_ready_for_checkout)
+                            @if ($order?->is_ready_for_checkout && !$order->sale()->exists())
                                 <a href="{{ route('orders.cashier', ['order' => $order->id, 'quick_checkout' => 1]) }}"
                                     class="w-full px-5 py-3 bg-emerald-600 text-white text-xs font-black uppercase tracking-widest rounded-lg hover:bg-emerald-700 shadow-md shadow-emerald-100 active:scale-95 transition-all flex items-center justify-center gap-2">
                                     <i class="fa-solid fa-cash-register text-sm"></i>

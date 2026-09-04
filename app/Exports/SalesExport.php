@@ -27,10 +27,17 @@ class SalesExport implements FromCollection, WithHeadings, WithStyles, WithCusto
     public function collection()
     {
         return Sale::with(['order.table', 'order.user'])
-            ->when(isset($this->request['from']), fn($q) => $q->whereDate('created_at', '>=', $this->request['from']))
-            ->when(isset($this->request['to']), fn($q) => $q->whereDate('created_at', '<=', $this->request['to']))
-            ->whereHas('order.table', function ($q) {
-                $q->where('name', 'like', '%' . ($this->request['search'] ?? '') . '%');
+            ->when(isset($this->request['from']), fn($q) => $q->whereDate('paid_at', '>=', $this->request['from']))
+            ->when(isset($this->request['to']), fn($q) => $q->whereDate('paid_at', '<=', $this->request['to']))
+            ->when($this->request['search'] ?? null, function ($query) {
+                $search = $this->request['search'];
+                $query->where(function ($query) use ($search) {
+                    $query->where('customer_name', 'like', '%' . $search . '%')
+                        ->orWhere('id', $search)
+                        ->orWhereHas('order', fn ($order) => $order
+                            ->where('customer_name', 'like', '%' . $search . '%')
+                            ->orWhereHas('table', fn ($table) => $table->where('name', 'like', '%' . $search . '%')));
+                });
             })
             ->get();
     }
@@ -44,9 +51,9 @@ class SalesExport implements FromCollection, WithHeadings, WithStyles, WithCusto
     {
         return [
             $sale->id,
-            $sale->created_at->format('d/m/Y H:i'),
-            $sale->order->table->name ?? 'N/A',
-            $sale->order->user->name ?? 'Sistema',
+            $sale->paid_at->format('d/m/Y H:i'),
+            $sale->order?->service_label ?? 'N/A',
+            $sale->order?->user?->name ?? 'Sistema',
             $sale->total,
         ];
     }

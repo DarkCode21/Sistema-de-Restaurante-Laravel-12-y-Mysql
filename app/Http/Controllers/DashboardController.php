@@ -33,16 +33,6 @@ class DashboardController extends Controller
     $propinasAyer = Sale::whereDate('paid_at', $ayer)->sum('tip');
     $variacionPropinas = $propinasAyer > 0 ? (($propinasHoy - $propinasAyer) / $propinasAyer) * 100 : 100;
 
-    // IMPUESTOS RECAUDADOS (IGV de las ventas de hoy)
-    $impuestosHoy = (float) Sale::whereDate('paid_at', $hoy)->sum('tax');
-    $impuestosAyer = (float) Sale::whereDate('paid_at', $ayer)->sum('tax');
-
-    // DESCUENTOS OTORGADOS (sobre las ventas de hoy)
-    $descuentosHoy = (float) SaleDetail::whereHas('sale', fn ($q) => $q->whereDate('paid_at', $hoy))->sum('discount')
-        + (float) Sale::whereDate('paid_at', $hoy)->sum('manual_discount');
-    $descuentosAyer = (float) SaleDetail::whereHas('sale', fn ($q) => $q->whereDate('paid_at', $ayer))->sum('discount')
-        + (float) Sale::whereDate('paid_at', $ayer)->sum('manual_discount');
-
     // MESAS
     $mesasTotales = Table::count();
     $mesasOcupadas = Table::where('status', 'ocupada')->count();
@@ -110,10 +100,6 @@ class DashboardController extends Controller
         'variacionVentas',
         'propinasHoy',
         'variacionPropinas',
-        'impuestosHoy',
-        'impuestosAyer',
-        'descuentosHoy',
-        'descuentosAyer',
         'mesasOcupadas',
         'mesasTotales',
         'porcentajeOcupacion',

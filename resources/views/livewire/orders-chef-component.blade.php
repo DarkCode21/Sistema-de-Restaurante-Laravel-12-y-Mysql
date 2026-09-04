@@ -37,7 +37,7 @@
                             <p class="mt-3 text-lg font-black uppercase text-slate-800">{{ $correction->product_name }}</p>
                             @if (!empty($correction->selected_options))
                                 <p class="mt-1 text-xs font-bold text-orange-600">
-                                    {{ collect($correction->selected_options)->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}
+                                    {{ collect($correction->selected_options)->map(fn ($option) => preg_replace('/^[^:]+:\s*/', '', $option['group']) . ': ' . $option['value'])->join(' · ') }}
                                 </p>
                             @endif
                             <p class="text-xs font-bold text-slate-500">
@@ -108,7 +108,7 @@
                                              </p>
                                             @if (!empty($detail->selected_options))
                                                 <p class="mt-1 text-[10px] font-black text-orange-600">
-                                                    {{ collect($detail->selected_options)->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}
+                                                    {{ collect($detail->selected_options)->map(fn ($option) => preg_replace('/^[^:]+:\s*/', '', $option['group']) . ': ' . $option['value'])->join(' · ') }}
                                                 </p>
                                             @endif
                                             @if ($detail->preparationStation)

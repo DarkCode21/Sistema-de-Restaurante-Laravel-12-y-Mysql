@@ -5,6 +5,8 @@ namespace App\Livewire;
 use App\Models\Order;
 use App\Models\OrderDetail;
 use App\Models\OrderCorrection;
+use App\Models\User;
+use App\Notifications\OrderReadyForService;
 use Illuminate\Support\Facades\DB;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -97,13 +99,15 @@ class OrdersChefComponent extends Component
 
     public function markDetailAsReady($detailId)
     {
-        $updated = $this->applyStationScope(OrderDetail::query())
+        $detail = $this->applyStationScope(OrderDetail::query())
             ->whereKey($detailId)
             ->whereIn('cooking_status', ['pending', 'in_progress'])
             ->whereHas('order', fn ($query) => $query->where('status', 'abierto'))
-            ->update(['cooking_status' => 'ready']);
+            ->first();
 
-        if ($updated === 1) {
+        if ($detail) {
+            $detail->update(['cooking_status' => 'ready']);
+            $this->notifyWaiterIfOrderReady($detail->order_id);
 
             $this->dispatch('swal', [
                 'title' => '¡Listo!',
@@ -123,12 +127,35 @@ class OrdersChefComponent extends Component
             ->update(['cooking_status' => 'ready']);
 
         if ($updated > 0) {
+            $this->notifyWaiterIfOrderReady($orderId);
+
             $this->dispatch('swal', [
                 'title' => 'Pedido listo',
                 'text' => 'Todos los platos pendientes fueron marcados como listos para entregar.',
                 'icon' => 'success',
                 'timer' => 1500,
             ]);
+        }
+    }
+
+    private function notifyWaiterIfOrderReady(int $orderId): void
+    {
+        $order = Order::with(['details', 'table', 'user'])->find($orderId);
+
+        if (!$order) {
+            return;
+        }
+
+        $kitchenDetails = $order->details
+            ->filter(fn (OrderDetail $detail) => $detail->requires_kitchen && $detail->cooking_status !== 'cancelled');
+
+        if ($kitchenDetails->isNotEmpty()
+            && $kitchenDetails->every(fn (OrderDetail $detail) => in_array($detail->cooking_status, ['ready', 'served'], true))) {
+            User::query()->whereHas('roles', fn ($query) => $query->where('name', 'admin'))->get()
+                ->push($order->user)
+                ->filter()
+                ->unique('id')
+                ->each(fn (User $user) => $user->notify(new OrderReadyForService($order)));
         }
     }
 

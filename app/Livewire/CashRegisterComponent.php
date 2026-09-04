@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\CashRegister;
+use App\Models\CashTerminal;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\On;
@@ -13,11 +14,18 @@ class CashRegisterComponent extends Component
 {
     use WithPagination;
 
-    public $name, $opening_amount, $notes;
+    public $terminal_id, $opening_amount, $notes;
+    public $new_terminal_name = '';
     public $cash_register_id = null;
     
     public $search = '';
     public $isOpen = false;
+    public $showTerminalForm = false;
+
+    public function mount(): void
+    {
+        CashTerminal::firstOrCreate(['name' => 'Caja principal'], ['is_active' => true]);
+    }
 
     public function updatingSearch()
     {
@@ -26,17 +34,20 @@ class CashRegisterComponent extends Component
 
     public function render()
     {
-        $registers = CashRegister::with(['opener', 'closer'])
+        $registers = CashRegister::with(['opener', 'closer', 'terminal'])
             ->where('name', 'like', '%' . $this->search . '%')
             ->latest()
             ->paginate(10);
 
-        return view('livewire.cash-register-component', compact('registers'));
+        $terminals = CashTerminal::query()->where('is_active', true)->orderBy('name')->get();
+
+        return view('livewire.cash-register-component', compact('registers', 'terminals'));
     }
 
     public function create()
     {
         $this->resetInputFields();
+        $this->terminal_id = CashTerminal::query()->where('is_active', true)->orderBy('id')->value('id');
         $this->openModal();
     }
 
@@ -46,7 +57,7 @@ class CashRegisterComponent extends Component
 
     private function resetInputFields()
     {
-        $this->reset(['name', 'opening_amount', 'notes', 'cash_register_id']);
+        $this->reset(['terminal_id', 'opening_amount', 'notes', 'cash_register_id']);
         $this->resetValidation();
     }
 
@@ -54,24 +65,45 @@ class CashRegisterComponent extends Component
     public function store()
     {
         $this->validate([
-            'name' => 'required|min:3|max:50',
+            'terminal_id' => $this->cash_register_id ? 'nullable' : 'required|exists:cash_terminals,id',
             'opening_amount' => 'required|numeric|min:0',
             'notes' => 'nullable|string|max:255',
         ]);
 
         $data = [
-            'name' => $this->name,
             'opening_amount' => $this->opening_amount,
             'notes' => $this->notes,
         ];
 
         if (!$this->cash_register_id) {
-            $data['current_amount'] = $this->opening_amount;
-            $data['status'] = 'open';
-            $data['opened_by'] = Auth::id();
-            $data['opened_at'] = now();
+            $opened = DB::transaction(function () use ($data) {
+                $terminal = CashTerminal::query()
+                    ->whereKey($this->terminal_id)
+                    ->where('is_active', true)
+                    ->lockForUpdate()
+                    ->first();
 
-            CashRegister::create($data);
+                if (!$terminal || CashRegister::query()->where('cash_terminal_id', $this->terminal_id)->where('status', 'open')->exists()) {
+                    return false;
+                }
+
+                CashRegister::create([
+                    ...$data,
+                    'name' => $terminal->name,
+                    'cash_terminal_id' => $terminal->id,
+                    'current_amount' => $this->opening_amount,
+                    'status' => 'open',
+                    'opened_by' => Auth::id(),
+                    'opened_at' => now(),
+                ]);
+
+                return true;
+            });
+
+            if (!$opened) {
+                $this->addError('terminal_id', 'Esta caja ya tiene una sesión abierta.');
+                return;
+            }
         } else {
             $updated = DB::transaction(function () use ($data) {
                 $register = CashRegister::query()
@@ -128,11 +160,21 @@ class CashRegisterComponent extends Component
         $this->resetInputFields();
     }
 
+    public function addTerminal(): void
+    {
+        $this->validate(['new_terminal_name' => 'required|string|min:3|max:50|unique:cash_terminals,name']);
+
+        $terminal = CashTerminal::create(['name' => trim($this->new_terminal_name), 'is_active' => true]);
+        $this->terminal_id = $terminal->id;
+        $this->new_terminal_name = '';
+        $this->showTerminalForm = false;
+    }
+
     public function edit($id)
     {
         $register = CashRegister::findOrFail($id);
         $this->cash_register_id = $register->id;
-        $this->name = $register->name;
+        $this->terminal_id = $register->cash_terminal_id;
         $this->opening_amount = $register->opening_amount;
         $this->notes = $register->notes;
 

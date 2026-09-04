@@ -98,7 +98,7 @@
             <tr>
                 <th>ID</th>
                 <th>Fecha / Hora</th>
-                <th>Mesa</th>
+                <th>Atención</th>
                 <th>Atendido por</th>
                 <th class="text-right">Total</th>
             </tr>
@@ -107,9 +107,9 @@
             @foreach($sales as $index => $sale)
             <tr class="{{ $index % 2 == 0 ? '' : 'tr-even' }}">
                 <td class="font-bold">#{{ $sale->id }}</td>
-                <td>{{ $sale->created_at->format('d/m/Y h:i A') }}</td>
-                <td>{{ $sale->order->table->name ?? 'N/A' }}</td>
-                <td>{{ $sale->order->user->name ?? 'Sistema' }}</td>
+                <td>{{ $sale->paid_at->format('d/m/Y h:i A') }}</td>
+                <td>{{ $sale->order?->service_label ?? 'N/A' }}</td>
+                <td>{{ $sale->order?->user?->name ?? 'Sistema' }}</td>
                 <td class="text-right font-bold">
                     {{ $config->currency_simbol }}{{ number_format($sale->total, 2) }}
                 </td>

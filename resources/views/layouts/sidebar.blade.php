@@ -300,7 +300,7 @@
             @canany(['usuarios.ver', 'roles.ver', 'empresa.editar', 'payment_methods.ver'])
                 @php
                     $activeConfig =
-                        request()->routeIs('users.*', 'settings.*', 'payment-methods.*', 'preparation-stations.*') || request()->is('roles*');
+                        request()->routeIs('users.*', 'settings.*', 'payment-methods.*', 'preparation-stations.*', 'restaurant-layout.*') || request()->is('roles*');
                 @endphp
 
                 <li x-data="{ open: {{ $activeConfig ? 'true' : 'false' }} }">
@@ -353,6 +353,13 @@
                                     class="flex items-center py-2 pl-6 text-sm rounded-r-lg transition-all
                                     {{ request()->routeIs('settings.*') ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-slate-500 hover:text-orange-600' }}">
                                     <i class="fa-solid fa-building mr-3 text-[10px]"></i> Empresa
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{{ route('restaurant-layout.index') }}"
+                                    class="flex items-center py-2 pl-6 text-sm rounded-r-lg transition-all
+                                    {{ request()->routeIs('restaurant-layout.*') ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-slate-500 hover:text-orange-600' }}">
+                                    <i class="fa-solid fa-layer-group mr-3 text-[10px]"></i> Pisos y zonas
                                 </a>
                             </li>
                         @endcan

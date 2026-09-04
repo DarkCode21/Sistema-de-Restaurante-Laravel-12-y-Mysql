@@ -56,7 +56,7 @@ class ExpensesExport implements FromQuery, WithMapping, WithHeadings, WithStyles
         return [
             $expense->concept,
             $expense->description ?? '-',
-            $expense->cashRegister->name ?? 'N/A',
+            $expense->cashRegister?->name ?? 'Gasto general',
             $expense->paymentMethod->name ?? 'N/A',
             -1 * abs($expense->amount),
             $expense->expense_date->format('d/m/Y h:i A'),

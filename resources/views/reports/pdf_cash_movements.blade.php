@@ -211,13 +211,15 @@
             @php
                 $movimientos = collect()
                     ->merge(
-                        $caja->sales->map(function ($sale) {
+                        $cashSales->map(function ($sale) {
+                            $cashPayments = $sale->payments->filter(fn($p) => $p->method?->is_efectivo);
+
                             return [
-                                'time' => $sale->created_at,
+                                'time' => $sale->paid_at,
                                 'is_gasto' => false,
                                 'concept' => 'Venta Realizada',
-                                'methods' => $sale->payments->map(fn($p) => $p->method->name)->implode(', '),
-                                'amount' => $sale->total,
+                                'methods' => $cashPayments->map(fn($p) => $p->method->name)->implode(', '),
+                                'amount' => $cashPayments->sum('amount'),
                             ];
                         }),
                     )

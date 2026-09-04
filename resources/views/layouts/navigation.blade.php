@@ -20,10 +20,7 @@
         </div>
 
         <div class="flex items-center gap-2 md:gap-4">
-            
-            {{-- <button class="hidden sm:flex text-gray-400 hover:text-orange-600 p-2 transition-colors">
-                <i class="fa-regular fa-bell text-lg"></i>
-            </button> --}}
+            <livewire:notification-bell-component />
 
             <div class="hidden sm:block w-px h-6 bg-gray-200 mx-1"></div>
 
@@ -68,3 +65,30 @@
         </div>
     </div>
 </nav>
+
+@once
+    <script>
+        document.addEventListener('livewire:init', () => {
+            const bellEnabled = @json((bool) ($empresa->alert_sounds_enabled ?? true));
+
+            Livewire.on('waiter-order-ready', () => {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+
+                if (!bellEnabled || !AudioContext) {
+                    return;
+                }
+
+                const context = new AudioContext();
+                const oscillator = context.createOscillator();
+                const gain = context.createGain();
+
+                oscillator.frequency.value = 880;
+                gain.gain.setValueAtTime(0.08, context.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.35);
+                oscillator.connect(gain).connect(context.destination);
+                oscillator.start();
+                oscillator.stop(context.currentTime + 0.35);
+            });
+        });
+    </script>
+@endonce

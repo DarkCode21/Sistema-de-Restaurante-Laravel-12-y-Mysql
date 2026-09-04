@@ -74,7 +74,7 @@ class OrderCreateComponent extends Component
         $this->separate_orders = $setting->separate_orders;
 
         if ($order) {
-            $this->order = Order::with(['details.product', 'details.components.product'])
+            $this->order = Order::with(['details.product.components', 'details.components.product'])
                 ->whereKey($order->id)
                 ->where('status', 'abierto')
                 ->firstOrFail();
@@ -85,7 +85,7 @@ class OrderCreateComponent extends Component
             abort_if($orderType === 'dine_in' && !$this->table, 404);
             $this->orderType = $this->table ? 'dine_in' : $orderType;
             $this->order = $this->table
-                ? Order::with(['details.product', 'details.components.product'])
+                ? Order::with(['details.product.components', 'details.components.product'])
                     ->where('table_id', $this->table->id)
                     ->where('status', 'abierto')
                     ->first()
@@ -149,11 +149,30 @@ class OrderCreateComponent extends Component
             return;
         }
 
-        $this->order->loadMissing(['details.product', 'details.components.product']);
+        $this->order->loadMissing(['details.product.components', 'details.components.product']);
         $this->cart = $this->order->details
             ->filter(fn (OrderDetail $detail) => !$detail->parent_detail_id && $detail->product && $detail->cooking_status !== 'cancelled')
-            ->mapWithKeys(fn (OrderDetail $detail) => [
-                $this->cartKeyForDetail($detail) => [
+            ->mapWithKeys(function (OrderDetail $detail) {
+                // Combos created before components use the current recipe for new portions.
+                $components = $detail->components->isNotEmpty()
+                    ? $detail->components->map(fn (OrderDetail $component) => [
+                        'product_id' => $component->product_id,
+                        'quantity' => $component->quantity / $detail->quantity,
+                        'selected_options' => $component->selected_options ?? [],
+                        'preparation_station_id' => $component->preparation_station_id,
+                        'requires_kitchen' => (bool) $component->requires_kitchen,
+                    ])
+                    : ($detail->product->is_combo
+                        ? $detail->product->components->map(fn (Product $component) => [
+                            'product_id' => $component->id,
+                            'quantity' => $component->pivot->quantity,
+                            'selected_options' => [],
+                            'preparation_station_id' => $component->preparation_station_id,
+                            'requires_kitchen' => (bool) $component->requires_kitchen,
+                        ])
+                        : collect());
+
+                return [$this->cartKeyForDetail($detail) => [
                     'detail_id' => $detail->id,
                     'product_id' => $detail->product_id,
                     'name' => $detail->product->name,
@@ -168,19 +187,13 @@ class OrderCreateComponent extends Component
                     'selected_options' => $detail->selected_options ?? [],
                     'option_key' => collect($detail->selected_options ?? [])->pluck('value_id')->sort()->join('-'),
                     'preparation_station_id' => $detail->preparation_station_id,
-                    'requires_kitchen' => (bool) ($detail->requires_kitchen || $detail->components->contains('requires_kitchen', true)),
+                    'requires_kitchen' => (bool) ($detail->requires_kitchen || $components->contains('requires_kitchen', true)),
                     'cooking_status' => $detail->service_status,
                     'is_printed' => (bool) $detail->is_printed,
-                    'is_combo' => $detail->components->isNotEmpty(),
-                    'components' => $detail->components->map(fn (OrderDetail $component) => [
-                        'product_id' => $component->product_id,
-                        'quantity' => $component->quantity / $detail->quantity,
-                        'selected_options' => $component->selected_options ?? [],
-                        'preparation_station_id' => $component->preparation_station_id,
-                        'requires_kitchen' => (bool) $component->requires_kitchen,
-                    ])->all(),
-                ],
-            ])
+                    'is_combo' => $detail->components->isNotEmpty() || $detail->product->is_combo,
+                    'components' => $components->all(),
+                ]];
+            })
             ->all();
         $this->customer_id = $this->order->customer_id;
         $this->customer_name = $this->order->customer_name ?: 'Consumidor Final';
@@ -508,7 +521,7 @@ class OrderCreateComponent extends Component
         $optionGroups = $product->is_combo
             ? $product->components->flatMap(fn (Product $component) => $component->optionGroups->map(fn ($group) => [
                 'id' => $group->id,
-                'name' => "{$component->name}: {$group->name}",
+                'name' => $group->name,
                 'required' => $group->required,
                 'values' => $group->values->map(fn ($value) => [
                     'id' => $value->id,
@@ -580,7 +593,7 @@ class OrderCreateComponent extends Component
 
                 if ($value) {
                     $option = [
-                        'group' => $product->is_combo ? "{$configuredProduct->name}: {$group->name}" : $group->name,
+                        'group' => $group->name,
                         'value' => $value->name,
                         'value_id' => $value->id,
                         'price_adjustment' => (float) $value->price_adjustment,
@@ -685,12 +698,38 @@ class OrderCreateComponent extends Component
             return;
         }
 
-        if (($item['is_combo'] ?? false) && $item['detail_id']) {
+        if (($item['is_combo'] ?? false) && ($item['components'] ?? []) === []) {
             $this->dispatch('swal', [
-                'title' => 'Combo ya enviado',
-                'text' => 'Agrega otro combo para pedir una porción adicional.',
+                'title' => 'Combo incompleto',
+                'text' => 'Configura sus componentes antes de agregar otra porción.',
                 'icon' => 'warning',
             ]);
+            return;
+        }
+
+        if (($item['is_combo'] ?? false) && $item['detail_id']) {
+            if (!$this->hasStockForOneMoreCombo($item)) {
+                $this->dispatch('swal', [
+                    'title' => 'Sin stock',
+                    'text' => 'No puedes agregar más de ' . $product->name,
+                    'icon' => 'warning',
+                ]);
+                return;
+            }
+
+            $draftCartKey = collect($this->cart)->search(fn ($cartItem) => (int) $cartItem['product_id'] === $product->id
+                && ($cartItem['option_key'] ?? '') === ($item['option_key'] ?? '')
+                && !$cartItem['detail_id']);
+
+            if ($draftCartKey !== false) {
+                $this->cart[$draftCartKey]['quantity']++;
+            } else {
+                $draftCartKey = $this->draftCartKey($product->id, $item['option_key'] ?? '');
+                $this->cart[$draftCartKey] = [...$item, 'detail_id' => null, 'quantity' => 1, 'subtotal' => 0, 'tax' => 0, 'cooking_status' => 'pending', 'is_printed' => false];
+            }
+
+            $this->recalcCartLine($draftCartKey);
+            $this->calculateCartTotal();
             return;
         }
 
@@ -760,6 +799,10 @@ class OrderCreateComponent extends Component
 
                     if (!$order || !$detail) {
                         throw new \RuntimeException('El producto ya no está disponible en esta orden.');
+                    }
+
+                    if ($order->sale()->exists()) {
+                        throw new \RuntimeException('El pedido ya fue pagado y no se puede modificar.');
                     }
 
                     if (in_array($detail->cooking_status, ['served', 'cancelled'], true)) {
@@ -1138,6 +1181,10 @@ class OrderCreateComponent extends Component
 
                     if (!$order) {
                         return ['order' => null, 'correction_ids' => []];
+                    }
+
+                    if ($order->sale()->exists()) {
+                        throw new \RuntimeException('El pedido ya fue pagado y no se puede modificar.');
                     }
 
                     $order->update([

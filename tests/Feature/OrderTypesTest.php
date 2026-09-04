@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\OrderDetail;
 use App\Models\Product;
 use App\Models\Setting;
+use App\Models\Table;
 use App\Models\User;
 use Livewire\Livewire;
 
@@ -84,4 +85,23 @@ it('shows delivery orders in the waiter, kitchen, and cashier queues', function 
     Livewire::actingAs($user)->test(OrdersIndexComponent::class)->assertSee('Delivery');
     Livewire::actingAs($user)->test(OrdersChefComponent::class)->assertSee('Delivery')->assertSee('Pizza delivery');
     Livewire::actingAs($user)->test(OrdersCashierComponent::class)->assertSee('Delivery');
+});
+
+it('shows the assigned dining table instead of a missing-table label', function () {
+    $user = User::factory()->create();
+    $table = Table::create([
+        'name' => 'Mesa 12',
+        'capacity' => 4,
+        'x_pos' => 0,
+        'y_pos' => 0,
+        'status' => 'ocupada',
+    ]);
+    $order = Order::create([
+        'table_id' => $table->id,
+        'user_id' => $user->id,
+        'order_type' => 'dine_in',
+        'status' => 'abierto',
+    ]);
+
+    expect($order->fresh()->service_label)->toBe('Mesa 12');
 });

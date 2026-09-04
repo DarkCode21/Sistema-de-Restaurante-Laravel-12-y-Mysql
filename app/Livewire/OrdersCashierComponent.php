@@ -48,6 +48,7 @@ class OrdersCashierComponent extends Component
         $this->direct_printing = $setting->direct_printing;
         $this->paymentMethods = PaymentMethod::all();
         $this->boxes = CashRegister::where('status', 'open')->get();
+        $this->boxId = $this->boxes->count() === 1 ? $this->boxes->first()->id : null;
         $this->quickCheckout = request()->boolean('quick_checkout');
         $this->knownReadyOrderIds = $this->readyOrders()->pluck('id')->map(fn ($id) => (int) $id)->all();
 
@@ -56,8 +57,8 @@ class OrdersCashierComponent extends Component
             return;
         }
 
-        $order = Order::with('details')->find($orderId);
-        if ($order?->is_ready_for_checkout) {
+        $order = Order::with(['details', 'sale'])->find($orderId);
+        if ($order?->is_ready_for_checkout && !$order->sale) {
             $this->openFullPayment($order->id);
         }
     }
@@ -85,6 +86,7 @@ class OrdersCashierComponent extends Component
         return Order::query()
             ->with('table')
             ->where('status', 'abierto')
+            ->doesntHave('sale')
             ->whereHas('details', fn ($query) => $query->where('cooking_status', '!=', 'cancelled'))
             ->whereDoesntHave('details', fn ($query) => $query
                 ->where('requires_kitchen', true)
@@ -103,7 +105,13 @@ class OrdersCashierComponent extends Component
         $totalPagadoGeneral = (float)$this->paid;
         $montoADeber = (float)$this->paymentAmount;
 
-        if ($totalPagadoGeneral > $montoADeber) {
+        $cashMethodIds = collect($this->paymentMethods)
+            ->where('is_efectivo', true)
+            ->pluck('id');
+        $hasCashPayment = collect($this->payments)
+            ->contains(fn ($payment) => $cashMethodIds->contains((int) ($payment['method_id'] ?? 0)));
+
+        if ($hasCashPayment && $totalPagadoGeneral > $montoADeber) {
             return $totalPagadoGeneral - $montoADeber;
         }
 
@@ -182,6 +190,7 @@ class OrdersCashierComponent extends Component
         $order = Order::query()
             ->with('table')
             ->where('status', 'abierto')
+            ->doesntHave('sale')
             ->find($orderId);
 
         if (!$order || $selectedDetailIds === []) {
@@ -221,7 +230,7 @@ class OrdersCashierComponent extends Component
 
     public function openFullPayment($order_id)
     {
-        $order = Order::with('table')
+        $order = Order::with(['table', 'sale'])
             ->where('status', 'abierto')
             ->find($order_id);
 
@@ -229,10 +238,10 @@ class OrdersCashierComponent extends Component
             return;
         }
 
-        if (!$order->isReadyForCheckout()) {
+        if ($order->sale) {
             $this->dispatch('swal', [
-                'title' => 'Pedido en cocina',
-                'text' => 'Solo se puede cobrar después de entregar los platos de cocina.',
+                'title' => 'Pedido pagado',
+                'text' => 'Este pedido ya fue cobrado y solo queda entregarlo.',
                 'icon' => 'warning',
             ]);
             return;
@@ -272,15 +281,6 @@ class OrdersCashierComponent extends Component
 
     public function processPayment(): void
     {
-        if (!$this->boxId) {
-            $this->dispatch('swal', [
-                'title' => 'Error',
-                'text'  => 'Debe seleccionar una caja para procesar el pago',
-                'icon'  => 'error'
-            ]);
-            return;
-        }
-
         if (!$this->order) {
             $this->dispatch('swal', [
                 'title' => 'Error',
@@ -391,21 +391,14 @@ class OrdersCashierComponent extends Component
                     throw new \RuntimeException('La orden ya no está disponible.');
                 }
 
-                if (!$order->isReadyForCheckout()) {
-                    throw new \RuntimeException('La orden aún no está lista para cobro.');
+                if ($order->sale()->exists()) {
+                    throw new \RuntimeException('La orden ya fue cobrada.');
                 }
 
-                $cashRegister = CashRegister::query()
-                    ->whereKey($this->boxId)
-                    ->where('status', 'open')
-                    ->lockForUpdate()
-                    ->first();
-
-                if (!$cashRegister) {
-                    throw new \RuntimeException('La caja ya no está disponible.');
-                }
+                $payingInAdvance = !$order->isReadyForCheckout();
 
                 $details = OrderDetail::query()
+                    ->with('product')
                     ->where('order_id', $order->id)
                     ->whereNull('parent_detail_id')
                     ->whereIn('id', $detailIds)
@@ -425,6 +418,23 @@ class OrdersCashierComponent extends Component
 
                 if ($methods->count() !== $methodIds->count()) {
                     throw new \RuntimeException('Uno de los métodos de pago no está disponible.');
+                }
+
+                $cashRegister = null;
+                if ($methods->contains(fn (PaymentMethod $method) => $method->is_efectivo)) {
+                    if (!$this->boxId) {
+                        throw new \RuntimeException('Selecciona una caja abierta para recibir efectivo.');
+                    }
+
+                    $cashRegister = CashRegister::query()
+                        ->whereKey($this->boxId)
+                        ->where('status', 'open')
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$cashRegister) {
+                        throw new \RuntimeException('La caja ya no está disponible.');
+                    }
                 }
 
                 $rawSubtotal = (float) $details->sum('subtotal');
@@ -453,7 +463,8 @@ class OrdersCashierComponent extends Component
 
                 $sale = Sale::create([
                     'order_id' => $order->id,
-                    'cash_register_id' => $cashRegister->id,
+                    'customer_name' => $order->customer_name ?: 'Consumidor Final',
+                    'cash_register_id' => $cashRegister?->id,
                     'subtotal' => $subtotal,
                     'tax' => $tax,
                     'manual_discount' => $manualDiscount,
@@ -469,6 +480,7 @@ class OrdersCashierComponent extends Component
                 foreach ($details as $detail) {
                     $sale->details()->create([
                         'product_id' => $detail->product_id,
+                        'product_name' => $detail->product?->name,
                         'quantity' => $detail->quantity,
                         'price' => $detail->price,
                         'discount' => (float) $detail->discount,
@@ -499,8 +511,8 @@ class OrdersCashierComponent extends Component
                     $sale->payments()->create([
                         'payment_method_id' => $method->id,
                         'amount' => $realAmount,
-                        'received_amount' => $payment['amount'],
-                        'returned_amount' => $returnedAmount,
+                        'received_amount' => $method->is_efectivo ? $payment['amount'] : null,
+                        'returned_amount' => $method->is_efectivo ? $returnedAmount : null,
                         'reference' => $payment['reference'],
                     ]);
                 }
@@ -509,25 +521,29 @@ class OrdersCashierComponent extends Component
                     throw new \RuntimeException('El vuelto debe descontarse de un pago en efectivo.');
                 }
 
-                OrderDetail::whereKey($details->pluck('id'))->delete();
-
-                $remainingDetails = $order->details()
-                    ->where('cooking_status', '!=', 'cancelled')
-                    ->get();
-
-                if ($remainingDetails->isEmpty()) {
-                    $order->update([
-                        'status' => 'cerrado',
-                        'amount_pending' => 0,
-                    ]);
-                    $order->table?->update(['status' => 'libre']);
+                if ($payingInAdvance) {
+                    $order->update(['amount_pending' => 0]);
                 } else {
-                    $order->update([
-                        'amount_pending' => $remainingDetails->sum('subtotal') + $remainingDetails->sum('tax'),
-                    ]);
+                    OrderDetail::whereKey($details->pluck('id'))->delete();
+
+                    $remainingDetails = $order->details()
+                        ->where('cooking_status', '!=', 'cancelled')
+                        ->get();
+
+                    if ($remainingDetails->isEmpty()) {
+                        $order->update([
+                            'status' => 'cerrado',
+                            'amount_pending' => 0,
+                        ]);
+                        $order->table?->update(['status' => 'libre']);
+                    } else {
+                        $order->update([
+                            'amount_pending' => $remainingDetails->sum('subtotal') + $remainingDetails->sum('tax'),
+                        ]);
+                    }
                 }
 
-                if ($cashAmount > 0) {
+                if ($cashAmount > 0 && $cashRegister) {
                     $cashRegister->increment('current_amount', $cashAmount);
                 }
 
@@ -602,6 +618,7 @@ class OrdersCashierComponent extends Component
     {
         $orders = Order::with([
             'table',
+            'sale',
             'details' => function ($q) {
                 $q->whereNull('parent_detail_id')
                     ->where('cooking_status', '!=', 'cancelled')

@@ -172,7 +172,7 @@
                         <td style="width: 75%;">
                             {{ $name }}
                             @if ($selectedOptions)
-                                <br><small>{{ collect($selectedOptions)->map(fn ($option) => $option['group'] . ': ' . $option['value'])->join(' · ') }}</small>
+                                <br><small>{{ collect($selectedOptions)->map(fn ($option) => preg_replace('/^[^:]+:\s*/', '', $option['group']) . ': ' . $option['value'])->join(' · ') }}</small>
                             @endif
                             @if ($notes)
                                 <br><small><strong>NOTA:</strong> {{ $notes }}</small>

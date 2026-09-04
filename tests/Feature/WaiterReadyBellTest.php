@@ -1,6 +1,7 @@
 <?php
 
 use App\Livewire\OrderCreateComponent;
+use App\Livewire\OrdersChefComponent;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderDetail;
@@ -9,6 +10,7 @@ use App\Models\Setting;
 use App\Models\Table;
 use App\Models\User;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Role;
 
 it('loads an existing open order when managing an occupied table', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
@@ -196,4 +198,52 @@ it('uses the administrator sound setting for waiter alerts', function () {
         ->assertDontSeeHtml('data-waiter-bell-toggle')
         ->assertSeeHtml('const bellEnabled = true')
         ->assertSeeHtml("Livewire.on('order-ready-for-service'");
+});
+
+it('notifies the waiter when kitchen finishes the order', function () {
+    $waiter = User::factory()->create();
+    $administrator = User::factory()->create();
+    $administrator->assignRole(Role::findOrCreate('admin'));
+    $kitchenUser = User::factory()->create();
+    $category = Category::create(['name' => 'Notificaciones']);
+    $product = Product::create([
+        'category_id' => $category->id,
+        'name' => 'Plato notificado',
+        'price' => 25,
+        'stock' => 5,
+        'status' => true,
+        'requires_kitchen' => true,
+        'image' => 'products/default.png',
+    ]);
+    $table = Table::create([
+        'name' => 'Mesa notificada',
+        'capacity' => 4,
+        'x_pos' => 0,
+        'y_pos' => 0,
+        'status' => 'ocupada',
+    ]);
+    $order = Order::create([
+        'table_id' => $table->id,
+        'user_id' => $waiter->id,
+        'status' => 'abierto',
+        'total' => 25,
+        'amount_pending' => 25,
+    ]);
+    $detail = OrderDetail::create([
+        'order_id' => $order->id,
+        'product_id' => $product->id,
+        'quantity' => 1,
+        'requires_kitchen' => true,
+        'price' => 25,
+        'subtotal' => 25,
+        'cooking_status' => 'pending',
+    ]);
+
+    Livewire::actingAs($kitchenUser)
+        ->test(OrdersChefComponent::class)
+        ->call('markDetailAsReady', $detail->id);
+
+    expect($waiter->unreadNotifications()->where('type', 'order-ready-for-service')->exists())->toBeTrue()
+        ->and($administrator->unreadNotifications()->where('type', 'order-ready-for-service')->exists())->toBeTrue()
+        ->and($kitchenUser->unreadNotifications()->where('type', 'order-ready-for-service')->exists())->toBeFalse();
 });

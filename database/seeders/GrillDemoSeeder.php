@@ -3,10 +3,14 @@
 namespace Database\Seeders;
 
 use App\Models\CashRegister;
+use App\Models\CashTerminal;
 use App\Models\Category;
+use App\Models\Expense;
+use App\Models\Ingredient;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
+use App\Models\PreparationStation;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleDetail;
@@ -31,6 +35,30 @@ class GrillDemoSeeder extends Seeder
                     'email_verified_at' => now(),
                 ],
             );
+
+            $grillCook = User::firstOrCreate(
+                ['email' => 'parrillero@demo.local'],
+                [
+                    'name' => 'Parrillero Demo',
+                    'password' => Hash::make('admin123'),
+                    'type' => 'user',
+                    'email_verified_at' => now(),
+                ],
+            );
+            $kitchenCook = User::firstOrCreate(
+                ['email' => 'cocina@demo.local'],
+                [
+                    'name' => 'Cocinero Demo',
+                    'password' => Hash::make('admin123'),
+                    'type' => 'user',
+                    'email_verified_at' => now(),
+                ],
+            );
+            $stations = collect(['Cocina', 'Parrilla'])->mapWithKeys(function (string $name): array {
+                return [$name => PreparationStation::firstOrCreate(['name' => $name])];
+            });
+            $stations['Cocina']->users()->syncWithoutDetaching([$kitchenCook->id]);
+            $stations['Parrilla']->users()->syncWithoutDetaching([$grillCook->id]);
 
             Product::query()->update(['status' => false]);
 
@@ -68,6 +96,7 @@ class GrillDemoSeeder extends Seeder
                 ['Combos Parrilleros', 'Combo Parrillero Dúo', 64.00, 18, 'products/grill-combo.png', true],
                 ['Combos Parrilleros', 'Parrilla Familiar', 118.00, 12, 'products/grill-combo.png', true],
                 ['Acompañamientos', 'Porción de Arroz Blanco', 5.00, 80, 'products/grill-sides.png', true],
+                ['Acompañamientos', 'Papas a elección', 8.00, 65, 'products/grill-sides.png', true],
                 ['Acompañamientos', 'Papas Ancochadas', 8.00, 65, 'products/grill-sides.png', true],
                 ['Acompañamientos', 'Ensalada Criolla', 6.00, 55, 'products/grill-sides.png', true],
                 ['Acompañamientos', 'Choclo a la Parrilla', 7.00, 45, 'products/grill-sides.png', true],
@@ -101,6 +130,110 @@ class GrillDemoSeeder extends Seeder
                 return [$name => $product];
             });
 
+            foreach ([
+                'Pollo a la Parrilla - Pecho (componente)' => [45, 'Pechuga'],
+                'Pollo a la Parrilla - Pierna (componente)' => [48, 'Pierna'],
+                '¼ Pollo a la Parrilla (componente)' => [60, 'Cuarto'],
+            ] as $name => [$stock, $label]) {
+                $products[$name] = Product::updateOrCreate(
+                    ['name' => $name],
+                    [
+                        'category_id' => $categories['Parrillas de Pollo']->id,
+                        'price' => 0,
+                        'stock' => $stock,
+                        'status' => false,
+                        'image' => 'products/grill-chicken.png',
+                        'requires_kitchen' => true,
+                    ],
+                );
+            }
+
+            $grillProducts = [
+                'Pollo a la Parrilla - Pecho (componente)', 'Pollo a la Parrilla - Pierna (componente)', '¼ Pollo a la Parrilla (componente)',
+                'Parrilla de Cerdo', 'Costillas de Cerdo BBQ', 'Brochetas de Cerdo', 'Parrilla de Carne', 'Bife a la Parrilla',
+                'Anticuchos de Corazón', 'Choclo a la Parrilla', 'Plátano a la Parrilla',
+            ];
+            $kitchenProducts = ['Porción de Arroz Blanco', 'Papas a elección', 'Papas Ancochadas', 'Ensalada Criolla', 'Huevo Frito'];
+            $comboDefinitions = [
+                'Parrilla de Pollo - Pecho' => [['Pollo a la Parrilla - Pecho (componente)', 1], ['Papas a elección', 1], ['Ensalada Criolla', 1]],
+                'Parrilla de Pollo - Pierna' => [['Pollo a la Parrilla - Pierna (componente)', 1], ['Papas a elección', 1], ['Ensalada Criolla', 1]],
+                '¼ Pollo a la Parrilla' => [['¼ Pollo a la Parrilla (componente)', 1], ['Papas a elección', 1], ['Ensalada Criolla', 1]],
+                'Pollo Entero a la Parrilla' => [['Pollo a la Parrilla - Pecho (componente)', 2], ['Pollo a la Parrilla - Pierna (componente)', 2], ['Papas a elección', 4], ['Ensalada Criolla', 4]],
+                'Combo Parrillero Personal' => [['¼ Pollo a la Parrilla (componente)', 1], ['Papas a elección', 1], ['Ensalada Criolla', 1], ['Chicha Morada', 1]],
+                'Combo Parrillero Dúo' => [['Parrilla de Carne', 1], ['Parrilla de Cerdo', 1], ['Papas a elección', 2], ['Ensalada Criolla', 2], ['Chicha Morada', 2]],
+                'Parrilla Familiar' => [['Pollo a la Parrilla - Pecho (componente)', 2], ['Pollo a la Parrilla - Pierna (componente)', 2], ['Papas a elección', 4], ['Ensalada Criolla', 4], ['Choclo a la Parrilla', 2]],
+            ];
+
+            foreach ($products as $name => $product) {
+                if (isset($comboDefinitions[$name])) {
+                    $product->update([
+                        'is_combo' => true,
+                        'requires_kitchen' => false,
+                        'preparation_station_id' => null,
+                        'stock' => 0,
+                    ]);
+                    $product->components()->sync(collect($comboDefinitions[$name])->mapWithKeys(
+                        fn (array $component) => [$products[$component[0]]->id => ['quantity' => $component[1]]],
+                    )->all());
+                    continue;
+                }
+
+                $station = in_array($name, $grillProducts, true)
+                    ? $stations['Parrilla']
+                    : (in_array($name, $kitchenProducts, true) ? $stations['Cocina'] : null);
+                $product->update([
+                    'is_combo' => false,
+                    'requires_kitchen' => $station !== null,
+                    'preparation_station_id' => $station?->id,
+                ]);
+            }
+
+            $potatoOptions = $products['Papas a elección'];
+            $potatoOptions->optionGroups()->delete();
+            $potatoOptions->optionGroups()->create([
+                'name' => 'Preparación de papa',
+                'required' => true,
+            ])->values()->createMany([
+                ['name' => 'Fritas', 'price_adjustment' => 0],
+                ['name' => 'Sancochadas', 'price_adjustment' => 0],
+            ]);
+
+            $meatOptions = $products['Parrilla de Carne'];
+            $meatOptions->optionGroups()->delete();
+            $meatOptions->optionGroups()->create([
+                'name' => 'Término de cocción',
+                'required' => true,
+            ])->values()->createMany([
+                ['name' => 'Medio', 'price_adjustment' => 0],
+                ['name' => 'Bien cocido', 'price_adjustment' => 0],
+            ]);
+
+            $ingredients = collect([
+                ['Pechuga de pollo', 'kg', 18, 3], ['Pierna de pollo', 'kg', 20, 3], ['Pollo trozado', 'kg', 25, 4],
+                ['Carne de res', 'kg', 15, 3], ['Carne de cerdo', 'kg', 16, 3], ['Papa', 'kg', 35, 5],
+                ['Lechuga', 'unit', 30, 5], ['Tomate', 'kg', 12, 2], ['Aceite', 'l', 10, 2], ['Carbón', 'kg', 30, 5],
+            ])->mapWithKeys(function (array $item): array {
+                [$name, $unit, $stock, $minimumStock] = $item;
+                return [$name => Ingredient::updateOrCreate(
+                    compact('name'),
+                    ['unit' => $unit, 'stock' => $stock, 'minimum_stock' => $minimumStock],
+                )];
+            });
+            $recipes = [
+                'Pollo a la Parrilla - Pecho (componente)' => [['Pechuga de pollo', 0.350], ['Carbón', 0.080]],
+                'Pollo a la Parrilla - Pierna (componente)' => [['Pierna de pollo', 0.350], ['Carbón', 0.080]],
+                '¼ Pollo a la Parrilla (componente)' => [['Pollo trozado', 0.300], ['Carbón', 0.060]],
+                'Parrilla de Carne' => [['Carne de res', 0.400], ['Carbón', 0.080]],
+                'Parrilla de Cerdo' => [['Carne de cerdo', 0.400], ['Carbón', 0.080]],
+                'Papas a elección' => [['Papa', 0.350], ['Aceite', 0.030]],
+                'Ensalada Criolla' => [['Lechuga', 0.150], ['Tomate', 0.120]],
+            ];
+            foreach ($recipes as $productName => $recipe) {
+                $products[$productName]->recipeIngredients()->sync(collect($recipe)->mapWithKeys(
+                    fn (array $item) => [$ingredients[$item[0]]->id => ['quantity' => $item[1]]],
+                )->all());
+            }
+
             $tableDefinitions = [
                 ['Mesa 1', 2, 40, 40], ['Mesa 2', 2, 280, 40], ['Mesa 3', 4, 520, 40],
                 ['Mesa 4', 4, 40, 310], ['Mesa 5', 4, 280, 310], ['Mesa 6', 6, 520, 310],
@@ -133,8 +266,15 @@ class GrillDemoSeeder extends Seeder
                 return [$name => $method];
             });
 
-            $cashRegister = CashRegister::withTrashed()->firstOrNew(['name' => 'Caja Principal']);
+            $terminal = CashTerminal::firstOrCreate(['name' => 'Caja principal'], ['is_active' => true]);
+            $terminal->update(['is_active' => true]);
+            $cashRegister = CashRegister::withTrashed()
+                ->where('status', 'open')
+                ->where(fn ($query) => $query->where('cash_terminal_id', $terminal->id)->orWhere('name', 'Caja Principal'))
+                ->first() ?? new CashRegister();
             $cashRegister->fill([
+                'cash_terminal_id' => $terminal->id,
+                'name' => $terminal->name,
                 'opening_amount' => 300,
                 'current_amount' => 300,
                 'status' => 'open',
@@ -175,14 +315,35 @@ class GrillDemoSeeder extends Seeder
                 );
             }
 
+            $demoExpenses = [
+                ['DEMO-GRILL-Compra de carbón', 'Carbón para parrilla', 42.00, today()->setTime(9, 15)],
+                ['DEMO-GRILL-Compra de verduras', 'Papa, lechuga y tomate', 28.50, today()->setTime(10, 30)],
+            ];
+            foreach ($demoExpenses as [$concept, $description, $amount, $expenseDate]) {
+                Expense::create([
+                    'cash_register_id' => $cashRegister->id,
+                    'payment_method_id' => $methods['Efectivo']->id,
+                    'user_id' => $operator->id,
+                    'concept' => $concept,
+                    'description' => $description,
+                    'amount' => $amount,
+                    'expense_date' => $expenseDate,
+                ]);
+            }
+
+            $cashRegister->update([
+                'current_amount' => (float) $cashRegister->opening_amount + collect($historicTickets)
+                    ->filter(fn (array $ticket) => $ticket[0]->isToday() && $ticket[3] === 'Efectivo')
+                    ->sum(fn (array $ticket) => collect($ticket[4])->sum(fn (array $line) => $products[$line[0]]->price * $line[1]))
+                    - collect($demoExpenses)->sum(fn (array $expense) => $expense[2]),
+            ]);
+
             $this->createOpenOrder($tables['Mesa 2'], $operator, $products, 'María López', 'DEMO-GRILL-OPEN-01', [
-                ['Parrilla de Pollo - Pecho', 1, 'Bien dorado, con papas ancochadas'],
-                ['Papas Ancochadas', 1, null],
+                ['Combo Parrillero Personal', 1, 'Bien dorado, con papas ancochadas'],
                 ['Chicha Morada', 2, null],
             ]);
             $this->createOpenOrder($tables['Mesa 5'], $operator, $products, 'Roberto Díaz', 'DEMO-GRILL-OPEN-02', [
-                ['Parrilla de Carne', 1, 'Término medio'],
-                ['Porción de Arroz Blanco', 1, null],
+                ['Combo Parrillero Dúo', 1, 'Carne a término medio'],
                 ['Salsa Chimichurri', 1, null],
             ]);
             $this->createOpenOrder($tables['Terraza 1'], $operator, $products, 'Familia Castro', 'DEMO-GRILL-OPEN-03', [
@@ -202,6 +363,7 @@ class GrillDemoSeeder extends Seeder
         SaleDetail::whereIn('sale_id', $saleIds)->delete();
         Sale::whereIn('id', $saleIds)->delete();
         Order::whereIn('id', $orderIds)->delete();
+        Expense::withTrashed()->where('concept', 'like', 'DEMO-GRILL-%')->forceDelete();
     }
 
     private function createCompletedTicket(Table $table, User $operator, CashRegister $cashRegister, PaymentMethod $method, $products, Carbon $paidAt, string $customer, string $marker, array $lines): void
@@ -234,7 +396,8 @@ class GrillDemoSeeder extends Seeder
         $tip = round($total * 0.06, 2);
         $sale = Sale::create([
             'order_id' => $order->id,
-            'cash_register_id' => $cashRegister->id,
+            'cash_register_id' => $method->is_efectivo ? $cashRegister->id : null,
+            'customer_name' => $customer,
             'subtotal' => $total,
             'tax' => 0,
             'tip' => $tip,
@@ -250,6 +413,7 @@ class GrillDemoSeeder extends Seeder
             SaleDetail::create([
                 'sale_id' => $sale->id,
                 'product_id' => $product->id,
+                'product_name' => $product->name,
                 'quantity' => $quantity,
                 'price' => $product->price,
                 'tax' => 0,
@@ -283,16 +447,63 @@ class GrillDemoSeeder extends Seeder
 
         foreach ($lines as $position => [$productName, $quantity, $notes]) {
             $product = $products[$productName];
+            $product->loadMissing('components.optionGroups.values');
+
+            if ($product->is_combo) {
+                $parent = $order->details()->create([
+                    'product_id' => $product->id,
+                    'quantity' => $quantity,
+                    'requires_kitchen' => false,
+                    'price' => $product->price,
+                    'subtotal' => $product->price * $quantity,
+                    'notes' => $notes,
+                    'cooking_status' => 'pending',
+                ]);
+
+                foreach ($product->components as $component) {
+                    $selectedOptions = $component->optionGroups
+                        ->filter(fn ($group) => $group->required)
+                        ->map(function ($group) use ($component) {
+                            $value = $group->values->first();
+
+                            return $value ? [
+                                'group' => $group->name,
+                                'value' => $value->name,
+                                'value_id' => $value->id,
+                                'price_adjustment' => (float) $value->price_adjustment,
+                            ] : null;
+                        })
+                        ->filter()
+                        ->values()
+                        ->all();
+                    $order->details()->create([
+                        'parent_detail_id' => $parent->id,
+                        'product_id' => $component->id,
+                        'quantity' => $component->pivot->quantity * $quantity,
+                        'preparation_station_id' => $component->preparation_station_id,
+                        'requires_kitchen' => $component->requires_kitchen,
+                        'price' => 0,
+                        'subtotal' => 0,
+                        'notes' => $notes,
+                        'selected_options' => $selectedOptions,
+                        'cooking_status' => $component->requires_kitchen ? 'in_progress' : 'pending',
+                        'is_printed' => $component->requires_kitchen,
+                    ]);
+                }
+
+                continue;
+            }
+
             $order->details()->create([
                 'product_id' => $product->id,
                 'quantity' => $quantity,
+                'preparation_station_id' => $product->preparation_station_id,
                 'requires_kitchen' => $product->requires_kitchen,
                 'price' => $product->price,
                 'subtotal' => $product->price * $quantity,
                 'notes' => $notes,
-                'cooking_status' => $product->requires_kitchen
-                    ? ($position === 0 ? 'in_progress' : 'pending')
-                    : 'pending',
+                'cooking_status' => $product->requires_kitchen ? ($position === 0 ? 'in_progress' : 'pending') : 'pending',
+                'is_printed' => $product->requires_kitchen,
             ]);
         }
 

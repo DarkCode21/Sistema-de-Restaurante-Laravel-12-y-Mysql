@@ -3,6 +3,8 @@
 namespace App\Livewire;
 
 use Livewire\Component;
+use App\Models\BranchIngredientStock;
+use App\Models\BranchProductStock;
 use App\Models\Product;
 use App\Models\Ingredient;
 use App\Models\Category;
@@ -11,11 +13,13 @@ use App\Models\Sale;
 use App\Models\OrderDetail;
 use App\Models\OrderCorrection;
 use App\Models\PaymentMethod;
+use App\Models\PrintJob;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\URL;
+use Livewire\Attributes\On;
+use Illuminate\Support\Str;
 use Livewire\WithPagination;
 
 class OrderCreateComponent extends Component
@@ -96,7 +100,7 @@ class OrderCreateComponent extends Component
 
         $this->paymentMethods = PaymentMethod::all();
         $this->categories = Category::whereHas('products', function ($query) {
-            $query->where('status', true);
+            $query->availableInActiveBranch();
         })->orderBy('name')->get();
     }
 
@@ -300,20 +304,20 @@ class OrderCreateComponent extends Component
         }
 
         if ($item['detail_id']) {
-            return $product->stock > 0;
+            return $this->productStock($product) > 0;
         }
 
         $draftQuantity = collect($this->cart)
             ->filter(fn ($cartItem) => (int) $cartItem['product_id'] === $product->id && !$cartItem['detail_id'])
             ->sum('quantity');
 
-        return $product->stock > $draftQuantity;
+        return $this->productStock($product) > $draftQuantity;
     }
 
     private function hasStockForCombo(array $components): bool
     {
         foreach ($components as $component) {
-            $product = Product::find($component['product_id']);
+            $product = Product::availableInActiveBranch()->find($component['product_id']);
             if ($product?->recipeIngredients()->exists()) {
                 continue;
             }
@@ -323,7 +327,7 @@ class OrderCreateComponent extends Component
                     ->where('product_id', $component['product_id'])
                     ->sum(fn ($draftComponent) => $draftComponent['quantity'] * $item['quantity']));
 
-            if (!$product || $product->stock < $draftQuantity + $component['quantity']) {
+            if (!$product || $this->productStock($product) < $draftQuantity + $component['quantity']) {
                 return false;
             }
         }
@@ -334,7 +338,7 @@ class OrderCreateComponent extends Component
     private function hasStockForOneMoreCombo(array $item): bool
     {
         foreach ($item['components'] as $component) {
-            $product = Product::find($component['product_id']);
+            $product = Product::availableInActiveBranch()->find($component['product_id']);
             if ($product?->recipeIngredients()->exists()) {
                 continue;
             }
@@ -344,7 +348,7 @@ class OrderCreateComponent extends Component
                     ->where('product_id', $component['product_id'])
                     ->sum(fn ($draftComponent) => $draftComponent['quantity'] * $cartItem['quantity']));
 
-            if (!$product || $product->stock < $draftQuantity + $component['quantity']) {
+            if (!$product || $this->productStock($product) < $draftQuantity + $component['quantity']) {
                 return false;
             }
         }
@@ -357,34 +361,14 @@ class OrderCreateComponent extends Component
         return $product->recipeIngredients()->exists();
     }
 
+    private function productStock(Product $product): float
+    {
+        return (float) ($product->branchStocks()->value('stock') ?? 0);
+    }
+
     private function consumeProductInventory(OrderDetail $detail, Product $product, int $quantity): void
     {
-        $recipe = $product->recipeIngredients()->orderBy('ingredients.id')->get();
-
-        if ($recipe->isEmpty()) {
-            if ($product->stock < $quantity) {
-                throw new \RuntimeException("Stock insuficiente para {$product->name}");
-            }
-
-            $product->decrement('stock', $quantity);
-            return;
-        }
-
-        foreach ($recipe as $recipeIngredient) {
-            $required = (float) $recipeIngredient->pivot->quantity * $quantity;
-            $ingredient = Ingredient::query()->whereKey($recipeIngredient->id)->lockForUpdate()->first();
-
-            if (!$ingredient || (float) $ingredient->stock < $required) {
-                throw new \RuntimeException("Stock insuficiente para {$recipeIngredient->name}");
-            }
-
-            $ingredient->decrement('stock', $required);
-            $detail->ingredientUsages()->create([
-                'ingredient_id' => $ingredient->id,
-                'quantity' => $required,
-                'unit_cost' => $ingredient->unit_cost,
-            ]);
-        }
+        $detail->consumeInventory($product, $quantity);
     }
 
     private function adjustDetailInventory(OrderDetail $detail, Product $product, int $difference): void
@@ -399,14 +383,21 @@ class OrderCreateComponent extends Component
             if ($difference > 0) {
                 $this->consumeProductInventory($detail, $product, $difference);
             } else {
-                $product->increment('stock', -$difference);
+                BranchProductStock::query()
+                    ->where('product_id', $product->id)
+                    ->lockForUpdate()
+                    ->firstOrFail()
+                    ->increment('stock', -$difference);
             }
             return;
         }
 
         foreach ($usages as $usage) {
             $amount = (float) $usage->quantity / $detail->quantity * abs($difference);
-            $ingredient = Ingredient::query()->whereKey($usage->ingredient_id)->lockForUpdate()->first();
+            $ingredient = BranchIngredientStock::query()
+                ->where('ingredient_id', $usage->ingredient_id)
+                ->lockForUpdate()
+                ->first();
 
             if (!$ingredient || ($difference > 0 && (float) $ingredient->stock < $amount)) {
                 throw new \RuntimeException('Stock insuficiente para un insumo de la receta.');
@@ -415,7 +406,7 @@ class OrderCreateComponent extends Component
             if ($difference > 0) {
                 $ingredient->decrement('stock', $amount);
                 $detail->ingredientUsages()->create([
-                    'ingredient_id' => $ingredient->id,
+                    'ingredient_id' => $ingredient->ingredient_id,
                     'quantity' => $amount,
                     'unit_cost' => $ingredient->unit_cost,
                 ]);
@@ -451,7 +442,10 @@ class OrderCreateComponent extends Component
 
     public function selectCustomer($id)
     {
-        $client = User::find($id);
+        $client = User::query()
+            ->where('type', 'client')
+            ->whereHas('companies', fn ($companies) => $companies->whereKey(session('company_id')))
+            ->find($id);
 
         if ($client) {
             $this->customer_id = $client->id;
@@ -485,18 +479,28 @@ class OrderCreateComponent extends Component
     {
         $this->validate([
             'newCustomer.name' => 'required|min:3',
-            'newCustomer.document_number' => 'nullable|numeric|unique:users,document_number',
+            'newCustomer.document_number' => 'nullable|numeric',
             'newCustomer.phone' => 'nullable'
         ]);
 
-        $namePart = strtolower(explode(' ', trim($this->newCustomer['name']))[0]);
-        $uniqueId = $this->newCustomer['document_number'] ?: rand(1000, 9999);
+        $companyId = session('company_id');
+        abort_unless($companyId, 403);
+
+        if (filled($this->newCustomer['document_number'])
+            && User::query()
+                ->where('type', 'client')
+                ->where('document_number', $this->newCustomer['document_number'])
+                ->whereHas('companies', fn ($companies) => $companies->whereKey($companyId))
+                ->exists()) {
+            $this->addError('newCustomer.document_number', 'Ya existe un cliente con este documento.');
+            return;
+        }
 
         $domain   = config('restaurant.customer.domain');
         $password = config('restaurant.customer.password');
         $type     = config('restaurant.customer.type');
 
-        $email = $namePart . '_' . $uniqueId . '@' . $domain;
+        $email = 'cliente_' . $companyId . '_' . Str::lower(Str::random(16)) . '@' . $domain;
 
         $client = User::create([
             'name'              => $this->newCustomer['name'],
@@ -507,6 +511,7 @@ class OrderCreateComponent extends Component
             'password'          => bcrypt($password),
             'email_verified_at' => now(),
         ]);
+        $client->companies()->attach($companyId);
 
         $this->selectCustomer($client->id);
         $this->reset('newCustomer');
@@ -514,7 +519,9 @@ class OrderCreateComponent extends Component
 
     public function addToOrder($productId)
     {
-        $product = Product::with(['optionGroups.values', 'components.optionGroups.values', 'activePromotion'])->find($productId);
+        $product = Product::availableInActiveBranch()
+            ->with(['optionGroups.values', 'components.optionGroups.values', 'activePromotion', 'branchStocks'])
+            ->find($productId);
 
         if (!$product || ($this->order && $this->order->status !== 'abierto')) {
             return;
@@ -574,7 +581,9 @@ class OrderCreateComponent extends Component
 
     public function confirmProductOptions(): void
     {
-        $product = Product::with(['optionGroups.values', 'components.optionGroups.values', 'activePromotion'])->find($this->configuringProduct['id'] ?? null);
+        $product = Product::availableInActiveBranch()
+            ->with(['optionGroups.values', 'components.optionGroups.values', 'activePromotion', 'branchStocks'])
+            ->find($this->configuringProduct['id'] ?? null);
 
         if (!$product || !$product->status) {
             $this->isOpenProductOptions = false;
@@ -650,7 +659,7 @@ class OrderCreateComponent extends Component
 
             $this->cart[$cartKey]['quantity']++;
             $this->recalcCartLine($cartKey);
-        } elseif (($product->is_combo && !$this->hasStockForCombo($components)) || (!$product->is_combo && !$product->recipeIngredients()->exists() && $product->stock <= collect($this->cart)
+        } elseif (($product->is_combo && !$this->hasStockForCombo($components)) || (!$product->is_combo && !$product->recipeIngredients()->exists() && $this->productStock($product) <= collect($this->cart)
             ->filter(fn ($item) => (int) $item['product_id'] === $product->id && !$item['detail_id'])
             ->sum('quantity'))) {
             $this->dispatch('swal', [
@@ -1069,42 +1078,22 @@ class OrderCreateComponent extends Component
         $details = $this->order->details()
             ->where('cooking_status', 'pending')
             ->where('is_printed', false)
-            ->with('product')
+            ->with(['product', 'preparationStation'])
             ->get();
 
         if ($details->isEmpty()) {
             return collect();
         }
 
-        if (!$this->separate_orders) {
-            return collect([
-                [
-                    'requires_kitchen' => false,
-                    'printer_name'     => $this->printer_name,
-                    'detail_ids'       => $details->pluck('id')->all(),
-                    'items'            => $details->map(function ($d) {
-                        return [
-                            'id'       => $d->id,
-                            'name'     => $d->product->name,
-                            'quantity' => $d->quantity,
-                            'notes'    => $d->notes ?? ''
-                        ];
-                    })->toArray()
-                ]
-            ]);
-        }
-
         return $details
-            ->groupBy('requires_kitchen')
-            ->map(function ($details, $requiresKitchen) {
-
-                $printerName = $requiresKitchen
-                    ? $this->kitchen_printer_name
-                    : $this->printer_name;
+            ->groupBy(fn (OrderDetail $detail) => $detail->preparation_station_id ?: 'general')
+            ->map(function ($details) {
+                $station = $details->first()->preparationStation;
 
                 return [
-                    'requires_kitchen' => (bool) $requiresKitchen,
-                    'printer_name'     => $printerName,
+                    'requires_kitchen' => (bool) $details->first()->requires_kitchen,
+                    'preparation_station_id' => $station?->id,
+                    'printer_name' => $station ? $station->printer_name : $this->printer_name,
                     'detail_ids'       => $details->pluck('id')->all(),
                     'items'            => $details->map(function ($d) {
                         return [
@@ -1116,6 +1105,7 @@ class OrderCreateComponent extends Component
                     })->toArray()
                 ];
             })
+            ->filter(fn (array $job) => filled($job['printer_name']))
             ->values();
     }
 
@@ -1124,6 +1114,7 @@ class OrderCreateComponent extends Component
         $corrections = OrderCorrection::query()
             ->where('order_id', $orderId)
             ->whereIn('id', $correctionIds)
+            ->with('preparationStation')
             ->get();
 
         if ($corrections->isEmpty()) {
@@ -1131,33 +1122,69 @@ class OrderCreateComponent extends Component
         }
 
         $setting = Setting::first();
-        $separateOrders = (bool) ($setting?->separate_orders);
-        $groups = $separateOrders
-            ? $corrections->groupBy('requires_kitchen')
-            : collect([false => $corrections]);
+        $groups = $corrections->groupBy(fn (OrderCorrection $correction) => $correction->preparation_station_id ?: 'general');
 
-        $this->dispatch(
-            'auto-print-kitchen-correction',
-            $groups->map(function ($group, $requiresKitchen) use ($orderId, $separateOrders, $setting) {
-                return [
-                    'url' => URL::temporarySignedRoute(
-                        'orders.kitchen-print',
-                        now()->addMinutes(5),
-                        [
-                            'id' => $orderId,
-                            'correction' => true,
-                            'correction_ids' => $group->pluck('id')->all(),
-                            ...($separateOrders
-                                ? ['requires_kitchen' => (bool) $requiresKitchen]
-                                : []),
-                        ],
-                    ),
-                    'printer_name' => $separateOrders && $requiresKitchen
-                        ? $setting?->kitchen_printer_name
-                        : $setting?->printer_name,
-                ];
-            })->values()->all(),
-        );
+        if ($setting?->direct_printing) {
+            $groups->each(function ($group) use ($orderId, $setting): void {
+                $station = $group->first()->preparationStation;
+                $printerName = $station?->printer_name ?: $setting->printer_name;
+
+                if (!filled($printerName)) {
+                    return;
+                }
+
+                $this->dispatchPrintJob(PrintJob::create([
+                    'order_id' => $orderId,
+                    'preparation_station_id' => $station?->id,
+                    'printer_name' => $printerName,
+                    'correction_ids' => $group->pluck('id')->all(),
+                    'is_correction' => true,
+                ]));
+            });
+        }
+    }
+
+    private function queuePrintJobs($itemsToPrint): void
+    {
+        foreach ($itemsToPrint as $item) {
+            $detailIds = $item['detail_ids'];
+            $existing = PrintJob::query()
+                ->where('order_id', $this->order->id)
+                ->where('is_correction', false)
+                ->where('status', 'queued')
+                ->get()
+                ->first(fn (PrintJob $job) => $job->detail_ids === $detailIds);
+
+            if ($existing) {
+                continue;
+            }
+
+            $this->dispatchPrintJob(PrintJob::create([
+                'order_id' => $this->order->id,
+                'preparation_station_id' => $item['preparation_station_id'],
+                'printer_name' => $item['printer_name'],
+                'detail_ids' => $detailIds,
+            ]));
+        }
+    }
+
+    private function dispatchPrintJob(PrintJob $job): void
+    {
+        $job->increment('attempts');
+        $this->dispatch('print-job', $job->fresh()->payload());
+    }
+
+    #[On('confirm-print-job')]
+    public function confirmPrintJob(int $jobId, bool $success, ?string $error = null): void
+    {
+        $job = PrintJob::find($jobId);
+        if (!$job) {
+            return;
+        }
+
+        $job->update($success
+            ? ['status' => 'sent', 'error' => null, 'confirmed_at' => now()]
+            : ['status' => 'failed', 'error' => $error ?: 'El agente local no confirmó la impresión.']);
     }
 
     public function saveOrderTransaction()
@@ -1463,27 +1490,8 @@ class OrderCreateComponent extends Component
             $this->order->load(['details.product.category', 'details.components.product']);
             $itemsToPrint = $this->itemsToPrint;
 
-            if ($itemsToPrint->isNotEmpty()) {
-                $this->dispatch(
-                    'auto-print-kitchen',
-                    $itemsToPrint->map(function ($catData) {
-                        return [
-                            'url' => URL::temporarySignedRoute(
-                                'orders.kitchen-print',
-                                now()->addMinutes(5),
-                                [
-                                    'id' => $this->order->id,
-                                    'detail_ids' => $catData['detail_ids'],
-                                    ...($this->separate_orders
-                                        ? ['requires_kitchen' => (bool) $catData['requires_kitchen']]
-                                        : []),
-                                ],
-                            ),
-                            'printer_name' => $catData['printer_name'],
-                            'requires_kitchen' => $catData['requires_kitchen'],
-                        ];
-                    })->all(),
-                );
+            if ($this->direct_printing && $itemsToPrint->isNotEmpty()) {
+                $this->queuePrintJobs($itemsToPrint);
             }
 
             if ($result['correction_ids'] !== []) {
@@ -1577,6 +1585,7 @@ class OrderCreateComponent extends Component
     public function render()
     {
         $customers = User::where('type', 'client')
+            ->whereHas('companies', fn ($companies) => $companies->whereKey(session('company_id')))
             ->where(function ($query) {
                 $query->where('name', 'like', '%' . $this->searchCustomer . '%')
                     ->orWhere('document_number', 'like', '%' . $this->searchCustomer . '%');
@@ -1584,7 +1593,7 @@ class OrderCreateComponent extends Component
             ->orderBy('name', 'asc')
             ->paginate(5, ['*'], 'pageCustomers');
 
-        $products = Product::with(['optionGroups.values', 'activePromotion'])->where('status', 1)
+        $products = Product::availableInActiveBranch()->with(['optionGroups.values', 'activePromotion', 'branchStocks'])
             ->when($this->category_id, fn($q) => $q->where('category_id', $this->category_id))
             ->when($this->search, fn($q) => $q->where('name', 'like', '%' . $this->search . '%'))
             ->paginate(12, ['*'], 'pageProducts');

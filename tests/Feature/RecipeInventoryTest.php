@@ -41,7 +41,7 @@ it('consumes and restores the recipe snapshot instead of product stock', functio
 
     $detail = OrderDetail::firstOrFail();
 
-    expect((float) $ingredient->refresh()->stock)->toBe(0.5)
+    expect((float) $ingredient->refresh()->branchStocks()->value('stock'))->toBe(0.5)
         ->and((float) $detail->ingredientUsages()->firstOrFail()->quantity)->toBe(0.5);
 
     $product->recipeIngredients()->sync([$ingredient->id => ['quantity' => 0.500]]);
@@ -50,5 +50,5 @@ it('consumes and restores the recipe snapshot instead of product stock', functio
         ->test(OrderCreateComponent::class, ['table' => $table->refresh()])
         ->call('removeItem', "detail-{$detail->id}");
 
-    expect((float) $ingredient->refresh()->stock)->toBe(1.0);
+    expect((float) $ingredient->refresh()->branchStocks()->value('stock'))->toBe(1.0);
 });

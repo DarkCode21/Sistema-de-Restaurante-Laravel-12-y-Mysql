@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
 {
+    use \App\Models\Concerns\HasActiveBranch;
     public const ORDER_TYPES = ['dine_in', 'pickup', 'delivery'];
 
     protected $fillable = [
@@ -18,7 +19,8 @@ class Order extends Model
         'delivery_address',
         'status',
         'total',
-        'amount_pending'
+        'amount_pending',
+        'offline_token',
     ];
 
     public function table()
@@ -39,6 +41,11 @@ class Order extends Model
     public function corrections()
     {
         return $this->hasMany(OrderCorrection::class);
+    }
+
+    public function printJobs()
+    {
+        return $this->hasMany(PrintJob::class);
     }
 
     public function isReadyForCheckout(): bool

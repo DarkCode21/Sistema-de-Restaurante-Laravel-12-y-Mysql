@@ -26,7 +26,7 @@ class UserComponent extends Component
 
     public function mount()
     {
-        $this->roles = Role::pluck('name')->toArray();
+        $this->roles = Role::where('company_id', $this->currentCompanyId())->pluck('name')->toArray();
     }
 
     public function updatingSearch()
@@ -36,10 +36,12 @@ class UserComponent extends Component
 
     public function render()
     {
+        $companyId = $this->currentCompanyId();
         $users = User::with('roles')->where(function ($q) {
             $q->where('name', 'like', '%' . $this->search . '%')
                 ->orWhere('email', 'like', '%' . $this->search . '%');
         })
+            ->when($companyId, fn ($query) => $query->whereHas('companies', fn ($companies) => $companies->whereKey($companyId)))
             ->latest()
             ->paginate(10);
 
@@ -91,7 +93,7 @@ class UserComponent extends Component
             'password' => $this->user_id
                 ? 'nullable|min:8'
                 : 'required|min:8',
-            'role' => 'required|exists:roles,name'
+            'role' => ['required', Rule::exists('roles', 'name')->where('company_id', $this->currentCompanyId())],
         ]);
 
         $data = [
@@ -109,7 +111,13 @@ class UserComponent extends Component
             $data
         );
 
-        $user->syncRoles([$this->role]);
+        $role = Role::where('company_id', $this->currentCompanyId())->where('name', $this->role)->firstOrFail();
+        $user->syncRoles([$role]);
+
+        if (!$this->user_id && ($branch = $this->currentBranch())) {
+            $user->companies()->syncWithoutDetaching([$branch->company_id]);
+            $user->branches()->syncWithoutDetaching([$branch->id]);
+        }
 
         $this->dispatch('swal', [
             'title' => $this->user_id ? '¡Actualizado!' : '¡Creado!',
@@ -123,7 +131,7 @@ class UserComponent extends Component
 
     public function edit($id)
     {
-        $user = User::findOrFail($id);
+        $user = $this->tenantUsers()->findOrFail($id);
 
         $this->user_id = $user->id;
         $this->name    = $user->name;
@@ -150,12 +158,43 @@ class UserComponent extends Component
     #[On('delete-confirmed')]
     public function destroy($id)
     {
-        User::findOrFail($id)->delete();
+        $user = $this->tenantUsers()->findOrFail($id);
+        $companyId = $this->currentCompanyId();
+
+        if ($companyId && $user->companies()->count() > 1) {
+            $branchIds = $user->branches()->where('company_id', $companyId)->pluck('branches.id');
+            $user->branches()->detach($branchIds);
+            $user->companies()->detach($companyId);
+        } else {
+            $user->delete();
+        }
 
         $this->dispatch('swal', [
             'title' => 'Eliminado',
             'text'  => 'Usuario eliminado correctamente',
             'icon'  => 'success',
         ]);
+    }
+
+    private function tenantUsers()
+    {
+        return User::query()->when(
+            $this->currentCompanyId(),
+            fn ($query, $companyId) => $query->whereHas('companies', fn ($companies) => $companies->whereKey($companyId)),
+        );
+    }
+
+    private function currentCompanyId(): ?int
+    {
+        $companyId = session('company_id') ?: Auth::user()?->companies()->value('companies.id');
+
+        return $companyId ? (int) $companyId : null;
+    }
+
+    private function currentBranch()
+    {
+        $user = Auth::user();
+
+        return $user?->branches()->whereKey(session('branch_id'))->first() ?? $user?->branches()->first();
     }
 }

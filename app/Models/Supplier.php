@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Supplier extends Model
 {
+    use \App\Models\Concerns\HasActiveCompany;
     protected $fillable = ['name', 'contact_name', 'phone', 'document_number'];
 
     public function purchases()

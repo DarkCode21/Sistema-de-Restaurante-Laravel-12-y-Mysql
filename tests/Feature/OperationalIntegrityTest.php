@@ -69,7 +69,7 @@ it('restores stock when a saved item is removed', function () {
         ->call('removeItem', "detail-{$order->details()->first()->id}")
         ->assertSet('cart', []);
 
-    expect($product->refresh()->stock)->toBe(10)
+    expect((int) $product->refresh()->branchStocks()->value('stock'))->toBe(10)
         ->and(Order::find($order->id))->toBeNull()
         ->and($table->refresh()->status)->toBe('libre');
 });

@@ -69,7 +69,7 @@ class PaymentMethodComponent extends Component
                 'required',
                 'min:2',
                 'max:50',
-                Rule::unique('payment_methods', 'name')->ignore($this->payment_method_id),
+                Rule::unique('payment_methods', 'name')->where('company_id', session('company_id'))->ignore($this->payment_method_id),
             ],
         ]);
 

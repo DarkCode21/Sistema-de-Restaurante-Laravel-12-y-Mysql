@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 class Expense extends Model
 {
     use SoftDeletes, HasFactory;
+    use \App\Models\Concerns\HasActiveBranch;
 
     protected $fillable = [
         'cash_register_id',

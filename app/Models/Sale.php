@@ -6,12 +6,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class Sale extends Model
 {
+    use \App\Models\Concerns\HasActiveBranch;
     protected $casts = ['paid_at' => 'datetime'];
 
     protected $fillable = [
         'order_id',
         'customer_name',
         'cash_register_id',
+        'cashier_id',
         'subtotal',
         'tax',
         'manual_discount',
@@ -37,6 +39,11 @@ class Sale extends Model
     public function cashRegister()
     {
         return $this->belongsTo(CashRegister::class);
+    }
+
+    public function cashier()
+    {
+        return $this->belongsTo(User::class, 'cashier_id');
     }
 
     public function details()

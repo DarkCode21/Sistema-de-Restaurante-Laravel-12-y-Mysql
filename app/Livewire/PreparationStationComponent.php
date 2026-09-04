@@ -15,6 +15,7 @@ class PreparationStationComponent extends Component
 
     public ?int $station_id = null;
     public string $name = '';
+    public string $printer_name = '';
     public array $user_ids = [];
     public bool $isOpen = false;
 
@@ -40,6 +41,7 @@ class PreparationStationComponent extends Component
         $station = PreparationStation::with('users')->findOrFail($stationId);
         $this->station_id = $station->id;
         $this->name = $station->name;
+        $this->printer_name = $station->printer_name ?? '';
         $this->user_ids = $station->users->pluck('id')->all();
         $this->isOpen = true;
     }
@@ -47,14 +49,15 @@ class PreparationStationComponent extends Component
     public function store(): void
     {
         $this->validate([
-            'name' => ['required', 'string', 'max:100', Rule::unique('preparation_stations')->ignore($this->station_id)],
+            'name' => ['required', 'string', 'max:100', Rule::unique('preparation_stations')->where('branch_id', session('branch_id'))->ignore($this->station_id)],
+            'printer_name' => ['nullable', 'string', 'max:255'],
             'user_ids' => 'array',
             'user_ids.*' => 'exists:users,id',
         ]);
 
         $station = PreparationStation::updateOrCreate(
             ['id' => $this->station_id],
-            ['name' => trim($this->name)],
+            ['name' => trim($this->name), 'printer_name' => trim($this->printer_name) ?: null],
         );
         $station->users()->sync($this->user_ids);
 
@@ -91,7 +94,7 @@ class PreparationStationComponent extends Component
 
     private function resetForm(): void
     {
-        $this->reset(['station_id', 'name', 'user_ids']);
+        $this->reset(['station_id', 'name', 'printer_name', 'user_ids']);
         $this->resetValidation();
     }
 }

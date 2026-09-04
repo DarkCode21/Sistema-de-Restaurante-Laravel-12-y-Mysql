@@ -38,8 +38,8 @@ it('updates ingredient stock and weighted average cost from a purchase', functio
         ]])
         ->call('store');
 
-    expect((float) $ingredient->refresh()->stock)->toBe(15.0)
-        ->and((float) $ingredient->unit_cost)->toBe(2.6667)
+    expect((float) $ingredient->refresh()->branchStocks()->value('stock'))->toBe(15.0)
+        ->and((float) $ingredient->branchStocks()->value('unit_cost'))->toBe(2.6667)
         ->and($supplier->purchases()->first()->total)->toEqual('20.00');
 });
 

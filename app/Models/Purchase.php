@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Purchase extends Model
 {
+    use \App\Models\Concerns\HasActiveBranch;
     protected $fillable = ['supplier_id', 'user_id', 'reference', 'total', 'purchased_at'];
 
     protected $casts = ['purchased_at' => 'datetime'];

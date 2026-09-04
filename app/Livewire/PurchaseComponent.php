@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\Ingredient;
+use App\Models\BranchIngredientStock;
 use App\Models\Purchase;
 use App\Models\Supplier;
 use Illuminate\Support\Facades\DB;
@@ -47,14 +48,15 @@ class PurchaseComponent extends Component
 
     public function loadLowStockItems(): void
     {
-        $items = Ingredient::query()
+        $items = BranchIngredientStock::query()
+            ->with('ingredient')
             ->whereColumn('stock', '<', 'minimum_stock')
-            ->orderBy('name')
+            ->orderBy('ingredient_id')
             ->get()
-            ->map(fn (Ingredient $ingredient) => [
-                'ingredient_id' => $ingredient->id,
-                'quantity' => round((float) $ingredient->minimum_stock - (float) $ingredient->stock, 3),
-                'unit_cost' => $this->moneyForInput($ingredient->unit_cost),
+            ->map(fn (BranchIngredientStock $stock) => [
+                'ingredient_id' => $stock->ingredient_id,
+                'quantity' => round((float) $stock->minimum_stock - (float) $stock->stock, 3),
+                'unit_cost' => $this->moneyForInput($stock->unit_cost),
             ])
             ->all();
 
@@ -114,15 +116,19 @@ class PurchaseComponent extends Component
             $total = 0.0;
 
             foreach ($this->items as $item) {
-                $ingredient = Ingredient::query()->lockForUpdate()->findOrFail($item['ingredient_id']);
+                $ingredient = Ingredient::query()->findOrFail($item['ingredient_id']);
+                $inventory = BranchIngredientStock::query()
+                    ->where('ingredient_id', $ingredient->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
                 $quantity = (float) $item['quantity'];
                 $unitCost = (float) $item['unit_cost'];
-                $stock = (float) $ingredient->stock;
+                $stock = (float) $inventory->stock;
                 $purchaseCost = $quantity * $unitCost;
                 $lineTotal = round($quantity * $unitCost, 2);
-                $averageCost = $ingredient->unit_cost === null || $stock <= 0
+                $averageCost = $inventory->unit_cost === null || $stock <= 0
                     ? $unitCost
-                    : (($stock * (float) $ingredient->unit_cost) + $purchaseCost) / ($stock + $quantity);
+                    : (($stock * (float) $inventory->unit_cost) + $purchaseCost) / ($stock + $quantity);
 
                 $purchase->details()->create([
                     'ingredient_id' => $ingredient->id,
@@ -130,7 +136,7 @@ class PurchaseComponent extends Component
                     'unit_cost' => $unitCost,
                     'total' => $lineTotal,
                 ]);
-                $ingredient->update([
+                $inventory->update([
                     'stock' => $stock + $quantity,
                     'unit_cost' => round($averageCost, 4),
                 ]);

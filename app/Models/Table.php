@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Table extends Model
 {
+    use \App\Models\Concerns\HasActiveBranch;
     protected $fillable = [
         'restaurant_floor_id',
         'dining_area_id',

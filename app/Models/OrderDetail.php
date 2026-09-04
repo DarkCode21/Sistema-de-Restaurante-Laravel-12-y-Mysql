@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\BranchIngredientStock;
+use App\Models\BranchProductStock;
 use Illuminate\Database\Eloquent\Model;
 
 class OrderDetail extends Model
@@ -61,17 +63,68 @@ class OrderDetail extends Model
         return $this->hasMany(OrderDetailIngredient::class);
     }
 
+    public function consumeInventory(Product $product, int $quantity): void
+    {
+        $recipe = $product->recipeIngredients()->orderBy('ingredients.id')->get();
+
+        if ($recipe->isEmpty()) {
+            $stock = BranchProductStock::query()
+                ->where('product_id', $product->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$stock || (float) $stock->stock < $quantity) {
+                throw new \RuntimeException("Stock insuficiente para {$product->name}");
+            }
+
+            $stock->decrement('stock', $quantity);
+            return;
+        }
+
+        foreach ($recipe as $recipeIngredient) {
+            $required = (float) $recipeIngredient->pivot->quantity * $quantity;
+            $ingredient = BranchIngredientStock::query()
+                ->where('ingredient_id', $recipeIngredient->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$ingredient || (float) $ingredient->stock < $required) {
+                throw new \RuntimeException("Stock insuficiente para {$recipeIngredient->name}");
+            }
+
+            $ingredient->decrement('stock', $required);
+            $this->ingredientUsages()->create([
+                'ingredient_id' => $ingredient->ingredient_id,
+                'quantity' => $required,
+                'unit_cost' => $ingredient->unit_cost,
+            ]);
+        }
+    }
+
     public function restoreInventory(): void
     {
         $usages = $this->ingredientUsages()->lockForUpdate()->get();
+        $branchId = $this->order()->value('branch_id');
+
+        if (!$branchId) {
+            return;
+        }
 
         if ($usages->isEmpty()) {
-            Product::query()->whereKey($this->product_id)->lockForUpdate()->first()?->increment('stock', $this->quantity);
+            BranchProductStock::withoutGlobalScopes()
+                ->where('branch_id', $branchId)
+                ->where('product_id', $this->product_id)
+                ->lockForUpdate()
+                ->first()?->increment('stock', $this->quantity);
             return;
         }
 
         foreach ($usages as $usage) {
-            Ingredient::query()->whereKey($usage->ingredient_id)->lockForUpdate()->first()?->increment('stock', $usage->quantity);
+            BranchIngredientStock::withoutGlobalScopes()
+                ->where('branch_id', $branchId)
+                ->where('ingredient_id', $usage->ingredient_id)
+                ->lockForUpdate()
+                ->first()?->increment('stock', $usage->quantity);
         }
     }
 

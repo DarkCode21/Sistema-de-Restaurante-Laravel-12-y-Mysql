@@ -7,7 +7,9 @@ use Illuminate\Support\Facades\Storage;
 
 class Setting extends Model
 {
+    use \App\Models\Concerns\HasActiveCompany;
     protected $fillable = [
+        'company_id',
         'company_name',
         'company_email',
         'company_phone',
@@ -33,6 +35,11 @@ class Setting extends Model
         'alert_sounds_enabled' => 'boolean',
         'default_tax_rate' => 'decimal:2',
     ];
+
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
+    }
 
     /**
      * Helper para obtener la URL del logo

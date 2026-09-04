@@ -29,9 +29,16 @@ class IngredientComponent extends Component
     public function render()
     {
         $ingredients = Ingredient::query()
+            ->with('branchStocks')
             ->where('name', 'like', '%' . $this->search . '%')
             ->orderBy('name')
             ->paginate(15);
+        $ingredients->getCollection()->each(function (Ingredient $ingredient): void {
+            $stock = $ingredient->branchStocks->first();
+            $ingredient->setAttribute('stock', $stock?->stock ?? 0);
+            $ingredient->setAttribute('minimum_stock', $stock?->minimum_stock ?? 0);
+            $ingredient->setAttribute('unit_cost', $stock?->unit_cost);
+        });
 
         return view('livewire.ingredient-component', ['ingredients' => $ingredients, 'units' => Ingredient::UNITS]);
     }
@@ -63,16 +70,18 @@ class IngredientComponent extends Component
     public function store(): void
     {
         $this->validate([
-            'name' => ['required', 'string', 'max:100', Rule::unique('ingredients', 'name')->ignore($this->ingredient_id)],
+            'name' => ['required', 'string', 'max:100', Rule::unique('ingredients', 'name')->where('company_id', session('company_id'))->ignore($this->ingredient_id)],
             'unit' => ['required', Rule::in(Ingredient::UNITS)],
             'stock' => 'required|numeric|min:0',
             'minimum_stock' => 'required|numeric|min:0',
             'unit_cost' => 'nullable|numeric|min:0',
         ]);
 
-        Ingredient::updateOrCreate(['id' => $this->ingredient_id], [
+        $ingredient = Ingredient::updateOrCreate(['id' => $this->ingredient_id], [
             'name' => $this->name,
             'unit' => $this->unit,
+        ]);
+        $ingredient->branchStocks()->updateOrCreate([], [
             'stock' => $this->stock,
             'minimum_stock' => $this->minimum_stock,
             'unit_cost' => $this->unit_cost === '' ? null : $this->unit_cost,

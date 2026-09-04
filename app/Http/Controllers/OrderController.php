@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\OrderCorrection;
+use App\Models\Product;
 use App\Models\Table;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Contracts\Encryption\DecryptException;
@@ -50,7 +51,11 @@ class OrderController extends Controller
         try {
             $decryptedId = decrypt($tableId);
             $table = Table::findOrFail($decryptedId);
-            return view('orders.create', ['table' => $table, 'orderType' => 'dine_in']);
+            return view('orders.create', [
+                'table' => $table,
+                'orderType' => 'dine_in',
+                'offlineOrderContext' => $this->offlineOrderContext($table, 'dine_in'),
+            ]);
         } catch (DecryptException $e) {
             abort(404, 'El identificador de la mesa no es válido.');
         }
@@ -60,7 +65,11 @@ class OrderController extends Controller
     {
         abort_unless(in_array($type, ['pickup', 'delivery'], true), 404);
 
-        return view('orders.create', ['table' => null, 'orderType' => $type]);
+        return view('orders.create', [
+            'table' => null,
+            'orderType' => $type,
+            'offlineOrderContext' => $this->offlineOrderContext(null, $type),
+        ]);
     }
 
     public function manage(Order $order)
@@ -71,6 +80,7 @@ class OrderController extends Controller
             'table' => $order->table,
             'order' => $order,
             'orderType' => $order->order_type,
+            'offlineOrderContext' => null,
         ]);
     }
 
@@ -89,8 +99,8 @@ class OrderController extends Controller
         $isCorrection = $request->boolean('correction');
 
         [$order, $details, $corrections] = DB::transaction(function () use ($request, $id, $detailIds, $correctionIds, $isCorrection) {
-            $order = Order::query()
-                ->with('table')
+            $order = Order::withoutGlobalScopes()
+                ->with(['table' => fn ($query) => $query->withoutGlobalScopes()])
                 ->whereKey($id)
                 ->when(!$isCorrection, fn ($query) => $query->where('status', 'abierto'))
                 ->lockForUpdate()
@@ -116,16 +126,19 @@ class OrderController extends Controller
                 return [$order, collect(), $corrections];
             }
 
-            $query = $order->details()->with('product');
+            $query = $order->details()->with(['product' => fn ($query) => $query->withoutGlobalScopes()]);
 
             if ($request->has('requires_kitchen')) {
                 $query->where('requires_kitchen', $request->boolean('requires_kitchen'));
             }
 
             if ($detailIds->isNotEmpty()) {
-                $query->whereIn('id', $detailIds)
-                    ->where('cooking_status', 'pending')
-                    ->where('is_printed', false);
+                $query->whereIn('id', $detailIds);
+
+                if (!$request->boolean('reprint')) {
+                    $query->where('cooking_status', 'pending')
+                        ->where('is_printed', false);
+                }
             } else {
                 // A kitchen user may deliberately reprint the active ticket.
                 $query->whereIn('cooking_status', ['pending', 'in_progress']);
@@ -198,5 +211,32 @@ class OrderController extends Controller
     private function mmToPoints($mm)
     {
         return $mm * 2.83464567;
+    }
+
+    private function offlineOrderContext(?Table $table, string $orderType): ?array
+    {
+        $user = Auth::user();
+
+        if (!$user?->hasRole('mesero') || !session('branch_id')) {
+            return null;
+        }
+
+        return [
+            'endpoint' => route('orders.offline'),
+            'user_id' => $user->id,
+            'branch_id' => (int) session('branch_id'),
+            'order_type' => $orderType,
+            'table_id' => $table?->id,
+            'products' => Product::availableInActiveBranch()
+                ->withCount('optionGroups')
+                ->orderBy('name')
+                ->get(['id', 'name', 'is_combo'])
+                ->map(fn (Product $product) => [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'available_offline' => !$product->is_combo && $product->option_groups_count === 0,
+                ])
+                ->all(),
+        ];
     }
 }

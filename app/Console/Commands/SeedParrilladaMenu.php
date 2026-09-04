@@ -17,9 +17,11 @@ class SeedParrilladaMenu extends Command
             $menuNames = array_column(ParrilladaMenuSeeder::MENU, 1);
             $parrilladaCategories = ParrilladaMenuSeeder::CATEGORIES;
 
-            $affected = \App\Models\Product::whereNotIn('name', $menuNames)
+            $products = \App\Models\Product::whereNotIn('name', $menuNames)
                 ->where('status', true)
-                ->update(['status' => false]);
+                ->get();
+            $products->each(fn (\App\Models\Product $product) => $product->update(['status' => false]));
+            $affected = $products->count();
 
             $staleCategories = \App\Models\Category::whereNotIn('name', $parrilladaCategories)->count();
             if ($staleCategories > 0) {

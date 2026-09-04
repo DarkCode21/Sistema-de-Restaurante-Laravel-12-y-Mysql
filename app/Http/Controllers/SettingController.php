@@ -114,7 +114,7 @@ class SettingController extends Controller
             $validated['favicon_path'] = $request->file('favicon_path')->store('branding', 'public');
         }
 
-        Setting::updateOrCreate(['id' => 1], $validated);
+        $setting->fill($validated)->save();
 
         cache()->forget('app_settings');
 

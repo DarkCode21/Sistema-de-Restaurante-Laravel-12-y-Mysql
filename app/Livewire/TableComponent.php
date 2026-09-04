@@ -212,7 +212,7 @@ class TableComponent extends Component
     public function store(): void
     {
         $this->validate([
-            'name' => ['required', 'min:2', 'max:50', Rule::unique('tables', 'name')->ignore($this->table_id)],
+            'name' => ['required', 'min:2', 'max:50', Rule::unique('tables', 'name')->where('branch_id', session('branch_id'))->ignore($this->table_id)],
             'capacity' => ['required', 'integer', 'min:1', 'max:99'],
             'status' => ['required', Rule::in(['libre', 'ocupada', 'reservada'])],
             'restaurant_floor_id' => ['required', 'exists:restaurant_floors,id'],

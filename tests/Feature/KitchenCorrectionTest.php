@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\OrderCorrection;
 use App\Models\OrderDetail;
 use App\Models\Product;
+use App\Models\PrintJob;
 use App\Models\Setting;
 use App\Models\Table;
 use App\Models\User;
@@ -105,7 +106,7 @@ it('sends a correction instead of deleting an item already sent to kitchen', fun
 
     $firstWaiter
         ->call('removeItem', "detail-{$detail->id}")
-        ->assertDispatched('auto-print-kitchen-correction')
+        ->assertNotDispatched('auto-print-kitchen-correction')
         ->assertSet('cart', fn (array $cart) => array_keys($cart) === ["detail-{$remainingDetail->id}"]);
 
     $staleWaiter
@@ -115,7 +116,7 @@ it('sends a correction instead of deleting an item already sent to kitchen', fun
     expect($detail->refresh()->cooking_status)->toBe('cancelled')
         ->and($order->refresh()->status)->toBe('abierto')
         ->and($table->refresh()->status)->toBe('ocupada')
-        ->and((int) $product->refresh()->stock)->toBe(10)
+        ->and((int) $product->refresh()->branchStocks()->value('stock'))->toBe(10)
         ->and(OrderCorrection::where('order_id', $order->id)->value('action'))->toBe('cancel')
         ->and(OrderCorrection::where('order_id', $order->id)->count())->toBe(1);
 });
@@ -127,7 +128,7 @@ it('adds a new pending line instead of changing sent kitchen quantity', function
         ->test(OrderCreateComponent::class, ['table' => $table])
         ->call('increment', "detail-{$detail->id}")
         ->call('saveOrderTransaction')
-        ->assertDispatched('auto-print-kitchen');
+        ->assertNotDispatched('auto-print-kitchen');
 
     $newDetail = $order->details()
         ->whereNotIn('id', [$detail->id])
@@ -138,7 +139,20 @@ it('adds a new pending line instead of changing sent kitchen quantity', function
         ->and($newDetail->quantity)->toBe(1)
         ->and($newDetail->cooking_status)->toBe('pending')
         ->and($newDetail->is_printed)->toBeFalse()
-        ->and((int) $product->refresh()->stock)->toBe(8);
+        ->and((int) $product->refresh()->branchStocks()->value('stock'))->toBe(8);
+});
+
+it('dispatches kitchen tickets only when direct printing is enabled', function () {
+    [$user, $table, , $detail] = makeKitchenCorrectionOrder();
+    Setting::first()->update(['direct_printing' => true, 'printer_name' => 'Ticketera cocina']);
+
+    Livewire::actingAs($user)
+        ->test(OrderCreateComponent::class, ['table' => $table])
+        ->call('increment', "detail-{$detail->id}")
+        ->call('saveOrderTransaction')
+        ->assertDispatched('print-job');
+
+    expect(PrintJob::where('order_id', $detail->order_id)->where('status', 'queued')->count())->toBe(1);
 });
 
 it('keeps the correction snapshot after a detail changes again', function () {
@@ -147,7 +161,7 @@ it('keeps the correction snapshot after a detail changes again', function () {
     Livewire::actingAs($user)
         ->test(OrderCreateComponent::class, ['table' => $table])
         ->call('updateNote', $detail->id, 'Sin cebolla')
-        ->assertDispatched('auto-print-kitchen-correction');
+        ->assertNotDispatched('auto-print-kitchen-correction');
 
     $table->update(['name' => 'Mesa renombrada']);
     $detail->update(['notes' => 'Con queso', 'cooking_status' => 'cancelled']);
@@ -168,7 +182,7 @@ it('does not alter a served item or its stock', function () {
         ->assertDispatched('swal');
 
     expect($detail->refresh()->cooking_status)->toBe('served')
-        ->and((int) $product->refresh()->stock)->toBe(9);
+        ->and((int) $product->refresh()->branchStocks()->value('stock'))->toBe(9);
 });
 
 it('keeps a kitchen correction visible until kitchen confirms it', function () {

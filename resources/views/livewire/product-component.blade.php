@@ -5,7 +5,7 @@
         <div class="flex flex-col md:flex-row gap-4 items-center justify-between mb-2">
             <div>
                 <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">Productos</h1>
-                <p class="text-slate-500 text-xs font-medium">Gestiona el inventario y catálogo de productos</p>
+                <p class="text-slate-500 text-xs font-medium">Gestiona el catálogo y los valores de esta sede</p>
             </div>
 
             <div class="flex w-full md:w-auto gap-3">
@@ -235,8 +235,8 @@
                         @endif
 
                         <div>
-                            <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Precio de
-                                Venta</label>
+                                <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Precio de
+                                    Venta de esta sede</label>
                             <div class="relative">
                                 <span class="absolute left-4 top-4 text-slate-400 text-sm">S/</span>
                                 <input wire:model="price" type="number" step="0.01" placeholder="0.00"
@@ -249,7 +249,7 @@
 
                         @if (!$is_combo)
                             <div>
-                                <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Costo unitario</label>
+                                <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Costo unitario de esta sede</label>
                                 <div class="relative">
                                     <span class="absolute left-4 top-4 text-slate-400 text-sm">S/</span>
                                     <input wire:model="cost" type="number" min="0" step="0.01" placeholder="Solo sin receta"
@@ -263,7 +263,7 @@
                         @if (!$is_combo)
                         <div>
                             <label
-                                class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Disponibilidad</label>
+                                class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Disponibilidad en esta sede</label>
                             <select wire:model="status"
                                 class="w-full border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all mt-1">
                                 <option value="1">Hay en carta</option>

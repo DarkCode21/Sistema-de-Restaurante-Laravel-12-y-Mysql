@@ -6,9 +6,10 @@ use Livewire\Component;
 use App\Models\Order;
 use App\Models\OrderDetail;
 use App\Models\OrderCorrection;
+use App\Models\PrintJob;
 use App\Models\Setting;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\URL;
+use Livewire\Attributes\On;
 use Livewire\WithPagination;
 
 class OrdersIndexComponent extends Component
@@ -234,23 +235,35 @@ class OrdersIndexComponent extends Component
         $setting = Setting::first();
         $separateOrders = (bool) ($setting?->separate_orders);
 
-        $this->dispatch('auto-print-kitchen-correction', [[
-            'url' => URL::temporarySignedRoute(
-                'orders.kitchen-print',
-                now()->addMinutes(5),
-                [
-                    'id' => $result['order_id'],
-                    'correction' => true,
-                    'correction_ids' => [$result['correction_id']],
-                    ...($separateOrders
-                        ? ['requires_kitchen' => $result['requires_kitchen']]
-                        : []),
-                ],
-            ),
-            'printer_name' => $separateOrders && $result['requires_kitchen']
+        if ($setting?->direct_printing) {
+            $printerName = $separateOrders && $result['requires_kitchen']
                 ? $setting?->kitchen_printer_name
-                : $setting?->printer_name,
-        ]]);
+                : $setting?->printer_name;
+
+            if (filled($printerName)) {
+                $job = PrintJob::create([
+                    'order_id' => $result['order_id'],
+                    'printer_name' => $printerName,
+                    'correction_ids' => [$result['correction_id']],
+                    'is_correction' => true,
+                ]);
+                $job->increment('attempts');
+                $this->dispatch('print-job', $job->fresh()->payload());
+            }
+        }
+    }
+
+    #[On('confirm-print-job')]
+    public function confirmPrintJob(int $jobId, bool $success, ?string $error = null): void
+    {
+        $job = PrintJob::find($jobId);
+        if (!$job) {
+            return;
+        }
+
+        $job->update($success
+            ? ['status' => 'sent', 'error' => null, 'confirmed_at' => now()]
+            : ['status' => 'failed', 'error' => $error ?: 'El agente local no confirmó la impresión.']);
     }
 
     public function render()

@@ -6,6 +6,9 @@ use App\Models\CashRegister;
 use App\Models\CashRegisterPaymentClosure;
 use App\Models\CashTerminal;
 use App\Models\Category;
+use App\Models\Company;
+use App\Models\BranchIngredientStock;
+use App\Models\Branch;
 use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\Order;
@@ -21,19 +24,41 @@ use App\Models\Supplier;
 use App\Models\Table;
 use App\Models\User;
 use Carbon\Carbon;
+use App\Support\TenantSeedContext;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class GrillDemoSeeder extends Seeder
 {
+    private ?Company $seedCompany = null;
+    private ?Branch $seedBranch = null;
+    private array $staff = [
+        'operator' => ['email' => 'admin@gmail.com', 'name' => 'Administrador'],
+        'grill_cook' => ['email' => 'parrillero@demo.local', 'name' => 'Parrillero Demo'],
+        'kitchen_cook' => ['email' => 'cocina@demo.local', 'name' => 'Cocinero Demo'],
+    ];
+
+    public function forBranch(Company $company, Branch $branch, array $staff): self
+    {
+        $this->seedCompany = $company;
+        $this->seedBranch = $branch;
+        $this->staff = $staff;
+
+        return $this;
+    }
+
     public function run(): void
     {
-        DB::transaction(function (): void {
+        $company = $this->seedCompany ?? Company::query()->firstOrFail();
+        $branch = $this->seedBranch ?? $company->branches()->firstOrFail();
+
+        TenantSeedContext::run($company->id, $branch->id, function () use ($company, $branch): void {
+            DB::transaction(function () use ($company, $branch): void {
             $operator = User::firstOrCreate(
-                ['email' => 'admin@gmail.com'],
+                ['email' => $this->staff['operator']['email']],
                 [
-                    'name' => 'Administrador',
+                    'name' => $this->staff['operator']['name'],
                     'password' => Hash::make('admin123'),
                     'type' => 'user',
                     'email_verified_at' => now(),
@@ -41,30 +66,34 @@ class GrillDemoSeeder extends Seeder
             );
 
             $grillCook = User::firstOrCreate(
-                ['email' => 'parrillero@demo.local'],
+                ['email' => $this->staff['grill_cook']['email']],
                 [
-                    'name' => 'Parrillero Demo',
+                    'name' => $this->staff['grill_cook']['name'],
                     'password' => Hash::make('admin123'),
                     'type' => 'user',
                     'email_verified_at' => now(),
                 ],
             );
             $kitchenCook = User::firstOrCreate(
-                ['email' => 'cocina@demo.local'],
+                ['email' => $this->staff['kitchen_cook']['email']],
                 [
-                    'name' => 'Cocinero Demo',
+                    'name' => $this->staff['kitchen_cook']['name'],
                     'password' => Hash::make('admin123'),
                     'type' => 'user',
                     'email_verified_at' => now(),
                 ],
             );
+            foreach ([$operator, $grillCook, $kitchenCook] as $user) {
+                $user->companies()->syncWithoutDetaching([$company->id]);
+                $user->branches()->syncWithoutDetaching([$branch->id]);
+            }
             $stations = collect(['Cocina', 'Parrilla'])->mapWithKeys(function (string $name): array {
                 return [$name => PreparationStation::firstOrCreate(['name' => $name])];
             });
             $stations['Cocina']->users()->syncWithoutDetaching([$kitchenCook->id]);
             $stations['Parrilla']->users()->syncWithoutDetaching([$grillCook->id]);
 
-            Product::query()->update(['status' => false]);
+            Product::query()->get()->each(fn (Product $product) => $product->update(['status' => false]));
 
             $categories = collect([
                 'Parrillas de Pollo',
@@ -291,7 +320,7 @@ class GrillDemoSeeder extends Seeder
 
             $terminal = CashTerminal::firstOrCreate(['name' => 'Caja principal'], ['is_active' => true]);
             $terminal->update(['is_active' => true]);
-            $this->removePreviousDemoData();
+            $this->removePreviousDemoData($branch->id);
             $cashRegister = $this->createDemoTurn($operator, $terminal, today(), 'DEMO-GRILL-TURNO-ACTUAL', true);
 
             $historicTickets = [
@@ -391,15 +420,16 @@ class GrillDemoSeeder extends Seeder
                 ['Choclo a la Parrilla', 2, 'Sin mantequilla'],
                 ['Coca-Cola Personal', 2, null],
             ]);
+            });
         });
     }
 
-    private function removePreviousDemoData(): void
+    private function removePreviousDemoData(int $branchId): void
     {
-        $orderIds = Order::where('customer_phone', 'like', 'DEMO-GRILL-%')->pluck('id');
-        $saleIds = Sale::whereIn('order_id', $orderIds)->pluck('id');
-        $purchaseIds = Purchase::where('reference', 'like', 'DEMO-GRILL-%')->pluck('id');
-        $cashRegisterIds = CashRegister::withTrashed()
+        $orderIds = Order::withoutGlobalScopes()->where('branch_id', $branchId)->where('customer_phone', 'like', 'DEMO-GRILL-%')->pluck('id');
+        $saleIds = Sale::withoutGlobalScopes()->whereIn('order_id', $orderIds)->pluck('id');
+        $purchaseIds = Purchase::withoutGlobalScopes()->where('branch_id', $branchId)->where('reference', 'like', 'DEMO-GRILL-%')->pluck('id');
+        $cashRegisterIds = CashRegister::withoutGlobalScopes()->withTrashed()->where('branch_id', $branchId)
             ->where(fn ($query) => $query
                 ->where('notes', 'like', 'DEMO-GRILL-TURNO%')
                 ->orWhere('notes', 'Caja de demostración para parrillería'))
@@ -407,12 +437,12 @@ class GrillDemoSeeder extends Seeder
 
         Payment::whereIn('sale_id', $saleIds)->delete();
         SaleDetail::whereIn('sale_id', $saleIds)->delete();
-        Sale::whereIn('id', $saleIds)->delete();
-        Order::whereIn('id', $orderIds)->delete();
-        Expense::withTrashed()->where('concept', 'like', 'DEMO-GRILL-%')->forceDelete();
-        Purchase::whereIn('id', $purchaseIds)->delete();
+        Sale::withoutGlobalScopes()->whereIn('id', $saleIds)->delete();
+        Order::withoutGlobalScopes()->whereIn('id', $orderIds)->delete();
+        Expense::withoutGlobalScopes()->withTrashed()->where('branch_id', $branchId)->where('concept', 'like', 'DEMO-GRILL-%')->forceDelete();
+        Purchase::withoutGlobalScopes()->whereIn('id', $purchaseIds)->delete();
         CashRegisterPaymentClosure::whereIn('cash_register_id', $cashRegisterIds)->delete();
-        CashRegister::withTrashed()->whereIn('id', $cashRegisterIds)->forceDelete();
+        CashRegister::withoutGlobalScopes()->withTrashed()->whereIn('id', $cashRegisterIds)->forceDelete();
     }
 
     private function createDemoTurn(User $operator, CashTerminal $terminal, Carbon $date, string $marker, bool $isOpen): CashRegister
@@ -492,9 +522,10 @@ class GrillDemoSeeder extends Seeder
             ['Aceite', 4, 10.20],
         ] as [$ingredientName, $quantity, $unitCost]) {
             $ingredient = $ingredients[$ingredientName];
-            $stock = (float) $ingredient->stock;
+            $inventory = BranchIngredientStock::query()->where('ingredient_id', $ingredient->id)->firstOrFail();
+            $stock = (float) $inventory->stock;
             $lineTotal = round($quantity * $unitCost, 2);
-            $averageCost = (($stock * (float) $ingredient->unit_cost) + ($quantity * $unitCost)) / ($stock + $quantity);
+            $averageCost = (($stock * (float) $inventory->unit_cost) + ($quantity * $unitCost)) / ($stock + $quantity);
 
             $purchase->details()->create([
                 'ingredient_id' => $ingredient->id,
@@ -502,7 +533,7 @@ class GrillDemoSeeder extends Seeder
                 'unit_cost' => $unitCost,
                 'total' => $lineTotal,
             ]);
-            $ingredient->update([
+            $inventory->update([
                 'stock' => $stock + $quantity,
                 'unit_cost' => round($averageCost, 4),
             ]);

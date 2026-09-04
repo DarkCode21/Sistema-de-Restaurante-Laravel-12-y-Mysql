@@ -1,0 +1,15 @@
+{
+  "name": "Ceviche Flow",
+  "short_name": "Ceviche Flow",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#ea580c",
+  "icons": [
+    {
+      "src": "/images/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

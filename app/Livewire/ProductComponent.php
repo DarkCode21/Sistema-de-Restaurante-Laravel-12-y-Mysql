@@ -45,11 +45,12 @@ class ProductComponent extends Component
 
     public function render()
     {
-        $products = Product::with('category')->withCount('recipeIngredients')
+        $products = Product::with(['category', 'branchStocks'])->withCount('recipeIngredients')
             ->where('name', 'like', '%' . $this->search . '%')
             ->orderByDesc('status')
             ->latest()
             ->paginate(10);
+        $products->getCollection()->each(fn (Product $product) => $product->setAttribute('stock', $product->branchStocks->first()?->stock ?? $product->getRawOriginal('stock') ?? 0));
 
         $categories = Category::orderBy('name', 'asc')->get();
         $stations = PreparationStation::orderBy('name')->get();
@@ -58,7 +59,8 @@ class ProductComponent extends Component
             ->when($this->product_id, fn ($query) => $query->whereKeyNot($this->product_id))
             ->orderBy('name')
             ->get(['id', 'name', 'preparation_station_id']);
-        $ingredients = Ingredient::orderBy('name')->get(['id', 'name', 'unit', 'stock']);
+        $ingredients = Ingredient::with('branchStocks')->orderBy('name')->get(['id', 'name', 'unit']);
+        $ingredients->each(fn (Ingredient $ingredient) => $ingredient->setAttribute('stock', $ingredient->branchStocks->first()?->stock ?? 0));
 
         return view('livewire.product-component', compact('products', 'categories', 'stations', 'componentProducts', 'ingredients'));
     }
@@ -91,7 +93,7 @@ class ProductComponent extends Component
     {
         $rules = [
             'category_id' => 'required|exists:categories,id',
-            'name' => ['required', 'min:2', Rule::unique('products', 'name')->ignore($this->product_id)],
+            'name' => ['required', 'min:2', Rule::unique('products', 'name')->where('company_id', session('company_id'))->ignore($this->product_id)],
             'price' => 'required|numeric',
             'cost' => 'nullable|numeric|min:0',
             'tax_rate' => 'required|numeric|min:0|max:100',
@@ -123,14 +125,11 @@ class ProductComponent extends Component
             return;
         }
 
+        $branchCost = $this->is_combo || $this->cost === '' ? null : $this->cost;
         $data = [
             'category_id' => $this->category_id,
             'name'        => $this->name,
-            'price'       => $this->price,
-            'cost'        => $this->is_combo || $this->cost === '' ? null : $this->cost,
             'tax_rate'    => $this->tax_rate,
-            'stock'       => $this->is_combo ? 0 : $this->stock,
-            'status'      => $this->status,
             'is_combo' => $this->is_combo,
             'requires_kitchen' => $this->is_combo ? false : $this->requires_kitchen,
             'preparation_station_id' => $this->is_combo || !$this->requires_kitchen ? null : $this->preparation_station_id,
@@ -144,8 +143,23 @@ class ProductComponent extends Component
             $data['image'] = $this->image->store('products', 'public');
         }
 
-        DB::transaction(function () use ($data) {
+        if (!$this->product_id) {
+            $data += [
+                'price' => $this->price,
+                'cost' => $branchCost,
+                'status' => $this->status,
+                'stock' => $this->is_combo ? 0 : $this->stock,
+            ];
+        }
+
+        DB::transaction(function () use ($data, $branchCost) {
             $product = Product::updateOrCreate(['id' => $this->product_id], $data);
+            $product->branchStocks()->updateOrCreate([], [
+                'stock' => $this->is_combo ? 0 : $this->stock,
+                'price' => $this->price,
+                'cost' => $branchCost,
+                'is_available' => $this->status,
+            ]);
             $product->optionGroups()->delete();
 
             foreach ($this->is_combo ? [] : $this->option_groups as $group) {
@@ -188,7 +202,7 @@ class ProductComponent extends Component
         $this->price       = $this->moneyForInput($product->price);
         $this->cost        = $this->moneyForInput($product->cost);
         $this->tax_rate    = $this->numberForInput($product->tax_rate);
-        $this->stock       = $product->stock;
+        $this->stock       = $product->branchStocks()->value('stock') ?? $product->getRawOriginal('stock') ?? 0;
         $this->status      = $product->status;
         $this->requires_kitchen = $product->requires_kitchen;
         $this->is_combo = $product->is_combo;

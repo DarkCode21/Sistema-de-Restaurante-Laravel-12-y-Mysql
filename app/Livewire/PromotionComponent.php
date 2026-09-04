@@ -41,7 +41,7 @@ class PromotionComponent extends Component
 
         return view('livewire.promotion-component', [
             'promotions' => $promotions,
-            'products' => Product::where('status', true)->orderBy('name')->get(['id', 'name', 'price']),
+            'products' => Product::availableInActiveBranch()->with('branchStocks')->orderBy('name')->get(['id', 'name', 'price']),
             'discountTypes' => Promotion::DISCOUNT_TYPES,
         ]);
     }

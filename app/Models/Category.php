@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Category extends Model
 {
+    use \App\Models\Concerns\HasActiveCompany;
     use SoftDeletes;
 
     protected $fillable = ['name', 'printer_name'];

@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class CashRegister extends Model
 {
     use SoftDeletes;
+    use \App\Models\Concerns\HasActiveBranch;
 
     protected $casts = [
         'opened_at' => 'datetime',

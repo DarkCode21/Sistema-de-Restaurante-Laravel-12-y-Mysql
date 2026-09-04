@@ -20,6 +20,27 @@
         </div>
 
         <div class="flex items-center gap-2 md:gap-4">
+            @php
+                $branches = Auth::user()->branches()->where('is_active', true)->orderBy('name')->get();
+            @endphp
+
+            @if ($branches->isNotEmpty())
+                <form method="POST" action="{{ route('branches.current', session('branch_id') ?: $branches->first()) }}" class="hidden md:block">
+                    @csrf
+                    @method('PUT')
+                    <label class="sr-only" for="branch-selector">Sede activa</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-store absolute left-3 top-1/2 -translate-y-1/2 text-orange-600 pointer-events-none" aria-hidden="true"></i>
+                        <select id="branch-selector" aria-label="Sede activa" class="w-56 appearance-none rounded-xl border border-orange-200 bg-orange-50 py-2 pl-10 pr-9 text-sm font-semibold text-orange-950 shadow-sm transition hover:border-orange-400 hover:bg-orange-100 focus:border-orange-500 focus:ring-2 focus:ring-orange-200" onchange="this.form.action = '{{ url('/current-branch') }}/' + this.value; this.form.submit()">
+                            @foreach ($branches as $branch)
+                                <option value="{{ $branch->id }}" @selected(session('branch_id') === $branch->id)>{{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                        <i class="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-xs text-orange-600 pointer-events-none" aria-hidden="true"></i>
+                    </div>
+                </form>
+            @endif
+
             <livewire:notification-bell-component />
 
             <div class="hidden sm:block w-px h-6 bg-gray-200 mx-1"></div>
@@ -52,7 +73,7 @@
                     
                     <div class="border-t border-gray-100"></div>
 
-                    <form method="POST" action="{{ route('logout') }}">
+                    <form method="POST" action="{{ route('logout') }}" data-clear-offline>
                         @csrf
                         <x-dropdown-link :href="route('logout')" 
                                         class="flex items-center gap-2 text-red-600 hover:text-red-700"

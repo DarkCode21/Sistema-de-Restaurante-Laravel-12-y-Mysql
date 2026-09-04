@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Company;
 use App\Models\Setting;
 use Illuminate\Database\Seeder;
 
@@ -12,9 +13,13 @@ class SettingSeeder extends Seeder
      */
     public function run(): void
     {
+        $company = Company::query()->firstOrFail();
+        $company->update(['name' => 'Ceviche Flow', 'slug' => 'ceviche-flow']);
+
         Setting::updateOrCreate(
             ['id' => 1],
             [
+                'company_id'      => $company->id,
                 'company_name'    => 'Ceviche Flow',
                 'company_email'   => 'contacto@ceviche.com',
                 'company_phone'   => '+51 987 654 321',

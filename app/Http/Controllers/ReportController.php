@@ -8,6 +8,7 @@ use App\Models\PaymentMethod;
 use App\Models\Promotion;
 use App\Models\Expense;
 use App\Models\Ingredient;
+use App\Models\BranchIngredientStock;
 use App\Models\Sale;
 use App\Models\SaleDetail;
 use Illuminate\Http\Request;
@@ -191,10 +192,16 @@ class ReportController extends Controller
             ->groupBy('product_id', 'product_name')
             ->orderByDesc('gross_profit')
             ->get();
-        $lowStockIngredients = Ingredient::query()
-            ->whereColumn('stock', '<=', 'minimum_stock')
-            ->orderBy('name')
-            ->get();
+        $lowStockIngredients = BranchIngredientStock::query()
+            ->join('ingredients', 'ingredients.id', '=', 'branch_ingredient_stocks.ingredient_id')
+            ->whereColumn('branch_ingredient_stocks.stock', '<=', 'branch_ingredient_stocks.minimum_stock')
+            ->orderBy('ingredients.name')
+            ->get([
+                'ingredients.name',
+                'ingredients.unit',
+                'branch_ingredient_stocks.stock',
+                'branch_ingredient_stocks.minimum_stock',
+            ]);
 
         $totals = [
             'sales' => (float) $sales,

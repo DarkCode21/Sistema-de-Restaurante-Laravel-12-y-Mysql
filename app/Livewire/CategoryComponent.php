@@ -65,7 +65,7 @@ class CategoryComponent extends Component
             'name' => [
                 'required',
                 'min:3',
-                Rule::unique('categories', 'name')->ignore($this->category_id),
+                Rule::unique('categories', 'name')->where('company_id', session('company_id'))->ignore($this->category_id),
             ],
         ]);
 

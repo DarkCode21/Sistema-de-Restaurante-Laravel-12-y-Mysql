@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class PaymentMethod extends Model
 {
     use SoftDeletes;
+    use \App\Models\Concerns\HasActiveCompany;
 
     protected $fillable = ['name', 'is_efectivo'];
 

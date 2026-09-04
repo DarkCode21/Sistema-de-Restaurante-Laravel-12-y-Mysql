@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 
 class Product extends Model
 {
+    use \App\Models\Concerns\HasActiveCompany;
     protected $fillable = [
         'category_id',
         'preparation_station_id',
@@ -23,6 +25,7 @@ class Product extends Model
     protected $casts = [
         'requires_kitchen' => 'boolean',
         'is_combo' => 'boolean',
+        'status' => 'boolean',
         'tax_rate' => 'decimal:2',
         'cost' => 'decimal:4',
     ];
@@ -56,6 +59,71 @@ class Product extends Model
     public function promotions()
     {
         return $this->hasMany(Promotion::class);
+    }
+
+    public function branchStocks()
+    {
+        return $this->hasMany(BranchProductStock::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::created(function (self $product): void {
+            $attributes = $product->getAttributes();
+            $branchStock = new BranchProductStock([
+                'stock' => $attributes['stock'] ?? 0,
+                'price' => $attributes['price'] ?? null,
+                'cost' => $attributes['cost'] ?? null,
+                'is_available' => $attributes['status'] ?? true,
+            ]);
+            $branchStock->product_id = $product->id;
+            $branchStock->save();
+        });
+
+        static::updated(function (self $product): void {
+            if ($product->wasChanged('stock')) {
+                $product->branchStocks()->updateOrCreate([], ['stock' => $product->getAttributes()['stock'] ?? 0]);
+            }
+
+            if ($product->wasChanged('status')) {
+                BranchProductStock::withoutGlobalScopes()
+                    ->where('product_id', $product->id)
+                    ->update(['is_available' => $product->getAttributes()['status'] ?? true]);
+            }
+        });
+    }
+
+    public function scopeAvailableInActiveBranch(Builder $query): void
+    {
+        $query->where(function (Builder $available): void {
+            $available->whereHas('branchStocks', fn (Builder $stock) => $stock->where('is_available', true))
+                ->orWhere(function (Builder $fallback): void {
+                    $fallback->whereDoesntHave('branchStocks')
+                        ->where('status', true);
+                });
+        });
+    }
+
+    public function getPriceAttribute($value)
+    {
+        return $this->activeBranchStock()?->price ?? $value;
+    }
+
+    public function getCostAttribute($value)
+    {
+        return $this->activeBranchStock()?->cost ?? $value;
+    }
+
+    public function getStatusAttribute($value): bool
+    {
+        return $this->activeBranchStock()?->is_available ?? (bool) $value;
+    }
+
+    private function activeBranchStock(): ?BranchProductStock
+    {
+        return $this->relationLoaded('branchStocks')
+            ? $this->getRelation('branchStocks')->first()
+            : $this->branchStocks()->first();
     }
 
     public function activePromotion()

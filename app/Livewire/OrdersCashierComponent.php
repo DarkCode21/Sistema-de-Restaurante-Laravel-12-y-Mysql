@@ -501,6 +501,7 @@ class OrdersCashierComponent extends Component
                     'order_id' => $order->id,
                     'customer_name' => $order->customer_name ?: 'Consumidor Final',
                     'cash_register_id' => $cashRegister->id,
+                    'cashier_id' => auth()->id(),
                     'subtotal' => $subtotal,
                     'tax' => $tax,
                     'manual_discount' => $manualDiscount,

@@ -324,7 +324,7 @@
             @canany(['usuarios.ver', 'roles.ver', 'empresa.editar', 'payment_methods.ver'])
                 @php
                     $activeConfig =
-                        request()->routeIs('users.*', 'settings.*', 'payment-methods.*', 'preparation-stations.*', 'restaurant-layout.*') || request()->is('roles*');
+                        request()->routeIs('users.*', 'settings.*', 'tenants.*', 'print-jobs.*', 'payment-methods.*', 'preparation-stations.*', 'restaurant-layout.*') || request()->is('roles*');
                 @endphp
 
                 <li x-data="{ open: {{ $activeConfig ? 'true' : 'false' }} }">
@@ -366,10 +366,24 @@
 
                         @can('empresa.editar')
                             <li>
+                                <a href="{{ route('tenants.index') }}"
+                                    class="flex items-center py-2 pl-6 text-sm rounded-r-lg transition-all
+                                    {{ request()->routeIs('tenants.*') ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-slate-500 hover:text-orange-600' }}">
+                                    <i class="fa-solid fa-code-branch mr-3 text-[10px]"></i> Empresas y sedes
+                                </a>
+                            </li>
+                            <li>
                                 <a href="{{ route('preparation-stations.index') }}"
                                     class="flex items-center py-2 pl-6 text-sm rounded-r-lg transition-all
                                     {{ request()->routeIs('preparation-stations.*') ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-slate-500 hover:text-orange-600' }}">
                                     <i class="fa-solid fa-fire-burner mr-3 text-[10px]"></i> Estaciones
+                                </a>
+                            </li>
+                            <li>
+                                <a href="{{ route('print-jobs.index') }}"
+                                    class="flex items-center py-2 pl-6 text-sm rounded-r-lg transition-all
+                                    {{ request()->routeIs('print-jobs.*') ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-slate-500 hover:text-orange-600' }}">
+                                    <i class="fa-solid fa-print mr-3 text-[10px]"></i> Cola de impresión
                                 </a>
                             </li>
                             <li>

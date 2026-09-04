@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class DiningArea extends Model
 {
+    use \App\Models\Concerns\HasActiveBranch;
     public const TYPES = ['salon', 'terraza', 'barra', 'privado'];
 
     protected $fillable = ['restaurant_floor_id', 'name', 'type', 'color', 'sort_order'];

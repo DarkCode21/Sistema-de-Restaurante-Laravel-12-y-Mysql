@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class RestaurantFloor extends Model
 {
+    use \App\Models\Concerns\HasActiveBranch;
     protected $fillable = ['name', 'sort_order', 'is_active'];
 
     protected $casts = ['is_active' => 'boolean'];

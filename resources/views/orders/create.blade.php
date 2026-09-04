@@ -5,6 +5,10 @@
         </h2>
     </x-slot>
 
+    @if ($offlineOrderContext)
+        <script id="offline-order-context" type="application/json">@json($offlineOrderContext)</script>
+    @endif
+
     @livewire('order-create-component', ['table' => $table, 'order' => $order ?? null, 'orderType' => $orderType])
 
 </x-admin-layout>

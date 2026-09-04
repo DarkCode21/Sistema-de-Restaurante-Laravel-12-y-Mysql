@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Promotion extends Model
 {
+    use \App\Models\Concerns\HasActiveCompany;
     public const DISCOUNT_TYPES = ['percent', 'fixed'];
 
     protected $fillable = ['product_id', 'name', 'discount_type', 'value', 'starts_at', 'ends_at', 'active'];

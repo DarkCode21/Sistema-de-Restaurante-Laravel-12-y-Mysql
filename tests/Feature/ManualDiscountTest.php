@@ -85,3 +85,40 @@ it('applies a manual discount before IGV and records its reason', function () {
         ->and((float) $cashRegister->refresh()->current_amount)->toBe(194.4)
         ->and(OrderDetail::find($detail->id))->toBeNull();
 });
+
+it('ignores a submitted tip when the company does not accept tips', function () {
+    Setting::create(['company_name' => 'Asador sin propinas', 'tips_enabled' => false]);
+    $user = User::factory()->create();
+    $cashRegister = CashRegister::create([
+        'name' => 'Caja sin propinas',
+        'opening_amount' => 0,
+        'current_amount' => 0,
+        'status' => 'open',
+        'opened_by' => $user->id,
+        'opened_at' => now(),
+    ]);
+    $cash = PaymentMethod::create(['name' => 'Efectivo', 'is_efectivo' => true]);
+    $category = Category::create(['name' => 'Bebidas']);
+    $product = Product::create([
+        'category_id' => $category->id,
+        'name' => 'Bebida sin propinas',
+        'price' => 20,
+        'stock' => 10,
+        'status' => true,
+        'image' => 'products/default.png',
+        'requires_kitchen' => false,
+    ]);
+    $table = Table::create(['name' => 'Mesa sin propinas', 'capacity' => 2, 'x_pos' => 0, 'y_pos' => 0, 'status' => 'ocupada']);
+    $order = Order::create(['table_id' => $table->id, 'user_id' => $user->id, 'status' => 'abierto', 'total' => 20, 'amount_pending' => 20]);
+    OrderDetail::create(['order_id' => $order->id, 'product_id' => $product->id, 'quantity' => 1, 'requires_kitchen' => false, 'price' => 20, 'tax' => 0, 'subtotal' => 20, 'cooking_status' => 'pending']);
+
+    Livewire::actingAs($user)
+        ->test(OrdersCashierComponent::class)
+        ->call('openFullPayment', $order->id)
+        ->set('tip', 10)
+        ->set('payments', [['method_id' => $cash->id, 'amount' => 20, 'reference' => '']])
+        ->call('processPayment');
+
+    expect((float) Sale::where('order_id', $order->id)->value('tip'))->toBe(0.0)
+        ->and((float) Sale::where('order_id', $order->id)->value('total'))->toBe(20.0);
+});

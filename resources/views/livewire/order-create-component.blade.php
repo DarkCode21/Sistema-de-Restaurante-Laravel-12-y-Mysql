@@ -63,15 +63,21 @@
                             <div class="flex items-center justify-between">
                                 @php
                                     $breakdown = $product->unitBreakdown(1);
+                                    $stockClass = $product->available_stock <= 0 ? 'text-rose-600 bg-rose-50' : ($product->available_stock <= 5 ? 'text-amber-700 bg-amber-50' : 'text-emerald-700 bg-emerald-50');
                                 @endphp
                                 <span class="text-sm sm:text-base font-black text-slate-900">
                                     {{ $empresa->currency_simbol }}{{ number_format($breakdown['subtotal'], 2) }}
                                 </span>
-                                <button wire:click="addToOrder({{ $product->id }})" data-offline-product-id="{{ $product->id }}"
-                                    class="bg-orange-600 text-white w-9 h-9 rounded-lg flex items-center justify-center hover:bg-orange-700 active:scale-90 transition-all"
-                                    aria-label="Añadir {{ $product->name }}">
-                                    +
-                                </button>
+                                <div class="flex items-center gap-2">
+                                    <span class="rounded-md px-1.5 py-1 text-[10px] font-black {{ $stockClass }}" title="Unidades disponibles">
+                                        <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i> {{ $product->available_stock }}
+                                    </span>
+                                    <button wire:click="addToOrder({{ $product->id }})" data-offline-product-id="{{ $product->id }}"
+                                        class="bg-orange-600 text-white w-9 h-9 rounded-lg flex items-center justify-center hover:bg-orange-700 active:scale-90 transition-all"
+                                        aria-label="Añadir {{ $product->name }}">
+                                        +
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -295,7 +301,7 @@
                                 <a href="{{ route('orders.cashier', ['order' => $order->id, 'quick_checkout' => 1]) }}"
                                     class="w-full px-5 py-3 bg-emerald-600 text-white text-xs font-black uppercase tracking-widest rounded-lg hover:bg-emerald-700 shadow-md shadow-emerald-100 active:scale-95 transition-all flex items-center justify-center gap-2">
                                     <i class="fa-solid fa-cash-register text-sm"></i>
-                                    {{ $orderType === 'dine_in' ? 'Cobrar y liberar mesa' : 'Cobrar pedido' }}
+                                    {{ $orderType === 'dine_in' ? 'Cobrar mesa' : 'Cobrar pedido' }}
                                 </a>
                             @endif
                         @endcan

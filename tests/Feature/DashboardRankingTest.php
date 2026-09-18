@@ -38,11 +38,14 @@ it('excludes inactive legacy products from the dashboard top products ranking', 
     SaleDetail::create(['sale_id' => $sale->id, 'product_id' => $activeProduct->id, 'quantity' => 1, 'price' => 30, 'tax' => 0, 'subtotal' => 30]);
     SaleDetail::create(['sale_id' => $sale->id, 'product_id' => $inactiveProduct->id, 'quantity' => 30, 'price' => 25, 'tax' => 0, 'subtotal' => 750]);
 
-    $rankedNames = app(DashboardController::class)
-        ->topProductsForDate(today())
-        ->pluck('product.name')
-        ->all();
+    $ranking = app(DashboardController::class)->topProductsForDate(today());
+
+    $rankedNames = $ranking->pluck('product.name')->all();
+    $rankedImages = $ranking->pluck('product.image')->all();
 
     expect($rankedNames)->toContain('Parrilla Activa')
         ->not->toContain('Ceviche Inactivo');
+
+    expect($rankedImages)
+        ->toContain('products/grill-beef.png');
 });

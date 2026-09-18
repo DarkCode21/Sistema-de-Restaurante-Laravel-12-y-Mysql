@@ -3,9 +3,10 @@
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=Plus+Jakarta+Sans:wght@400;500;600;800&display=swap');
 
         .brand-side {
-            background-image: url("{{ asset('images/bg.png') }}");
+            background-image: url("{{ asset('images/banner.webp') }}");
             background-size: cover;
             background-position: center;
+            background-repeat: no-repeat;
             position: relative;
             font-family: 'Plus Jakarta Sans', sans-serif;
         }
@@ -88,8 +89,9 @@
                             <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none transition-colors group-focus-within:text-orange-600">
                                 <i class="fas fa-user-circle text-lg text-slate-400 group-focus-within:text-orange-500"></i>
                             </div>
-                            <input id="email" class="custom-input block w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl transition-all text-slate-700 shadow-sm placeholder:text-slate-300" type="email" name="email" :value="old('email')" required autofocus placeholder="usuario@restaurante.com" />
+                            <input id="email" class="custom-input block w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl transition-all text-slate-700 shadow-sm placeholder:text-slate-300" type="email" name="email" :value="old('email')" autocomplete="username" autocapitalize="none" required autofocus placeholder="usuario@restaurante.com" />
                         </div>
+                        <x-input-error :messages="$errors->get('email')" class="mt-2 text-xs text-red-500" />
                     </div>
 
                     <div>
@@ -102,14 +104,15 @@
                             <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none transition-colors group-focus-within:text-orange-600">
                                 <i class="fas fa-key text-lg text-slate-400 group-focus-within:text-orange-500"></i>
                             </div>
-                            <input id="password" class="custom-input block w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl transition-all text-slate-700 shadow-sm placeholder:text-slate-300" type="password" name="password" placeholder="••••••••" required />
+                            <input id="password" class="custom-input block w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl transition-all text-slate-700 shadow-sm placeholder:text-slate-300" type="password" name="password" autocomplete="current-password" placeholder="••••••••" required />
                         </div>
+                        <x-input-error :messages="$errors->get('password')" class="mt-2 text-xs text-red-500" />
                     </div>
 
                     <div class="flex items-center justify-between">
                         <label for="remember_me" class="flex items-center cursor-pointer">
-                            <input id="remember_me" type="checkbox" class="rounded-md border-slate-300 text-orange-600 shadow-sm focus:ring-orange-500 w-5 h-5 transition-all" name="remember">
-                            <span class="ms-2 text-sm text-slate-500 font-medium select-none italic">Mantener sesión</span>
+                            <input id="remember_me" type="checkbox" class="rounded-md border-slate-300 text-orange-600 shadow-sm focus:ring-orange-500 w-5 h-5 transition-all" name="remember" @checked(old('remember'))>
+                            <span class="ms-2 text-sm text-slate-500 font-medium select-none italic">Mantener sesión por 30 días</span>
                         </label>
 
                         @if (Route::has('password.request'))

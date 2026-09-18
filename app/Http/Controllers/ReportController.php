@@ -172,26 +172,27 @@ class ReportController extends Controller
     {
         $start_date = $request->start_date ?? now()->startOfMonth()->format('Y-m-d');
         $end_date = $request->end_date ?? now()->format('Y-m-d');
+        $categoryId = $request->integer('category_id') ?: null;
+        $productSearch = trim((string) $request->input('product'));
 
-        $details = SaleDetail::query()->whereHas('sale', function ($query) use ($start_date, $end_date) {
-            $query->whereDate('paid_at', '>=', $start_date)
-                ->whereDate('paid_at', '<=', $end_date);
-        });
+        $details = SaleDetail::query()
+            ->whereHas('sale', function ($query) use ($start_date, $end_date) {
+                $query->whereDate('paid_at', '>=', $start_date)
+                    ->whereDate('paid_at', '<=', $end_date);
+            })
+            ->when($categoryId, fn ($query) => $query->whereHas('product', fn ($product) => $product->where('category_id', $categoryId)))
+            ->when($productSearch, fn ($query) => $query->where('product_name', 'like', '%' . $productSearch . '%'));
         $costedDetails = (clone $details)->whereNotNull('cost_total');
         $costSummary = (clone $costedDetails)->selectRaw('COUNT(*) as line_count, COALESCE(SUM(cost_total), 0) as cost, COALESCE(SUM(gross_profit), 0) as gross_profit')->first();
-        $sales = Sale::query()
-            ->whereDate('paid_at', '>=', $start_date)
-            ->whereDate('paid_at', '<=', $end_date)
-            ->sum('subtotal');
+        $sales = (clone $details)->sum('subtotal');
         $expenses = Expense::query()
             ->whereDate('expense_date', '>=', $start_date)
             ->whereDate('expense_date', '<=', $end_date)
             ->sum('amount');
-        $products = (clone $costedDetails)
+        $productsQuery = (clone $costedDetails)
             ->selectRaw('product_id, product_name, SUM(quantity) as quantity, SUM(cost_total) as cost, SUM(gross_profit) as gross_profit')
             ->groupBy('product_id', 'product_name')
-            ->orderByDesc('gross_profit')
-            ->get();
+            ->orderByDesc('gross_profit');
         $lowStockIngredients = BranchIngredientStock::query()
             ->join('ingredients', 'ingredients.id', '=', 'branch_ingredient_stocks.ingredient_id')
             ->whereColumn('branch_ingredient_stocks.stock', '<=', 'branch_ingredient_stocks.minimum_stock')
@@ -213,6 +214,35 @@ class ReportController extends Controller
             'missing_cost_lines' => (clone $details)->whereNull('cost_total')->count(),
         ];
 
-        return view('reports.profit', compact('start_date', 'end_date', 'products', 'lowStockIngredients', 'totals'));
+        $categories = Category::query()->orderBy('name')->get(['id', 'name']);
+        $selectedCategory = $categories->firstWhere('id', $categoryId);
+
+        if ($request->boolean('print')) {
+            $products = $productsQuery->get();
+
+            return view('reports.profit-print', compact(
+                'start_date',
+                'end_date',
+                'categoryId',
+                'productSearch',
+                'selectedCategory',
+                'products',
+                'lowStockIngredients',
+                'totals',
+            ));
+        }
+
+        $products = $productsQuery->paginate(15)->withQueryString();
+
+        return view('reports.profit', compact(
+            'start_date',
+            'end_date',
+            'categoryId',
+            'productSearch',
+            'categories',
+            'products',
+            'lowStockIngredients',
+            'totals',
+        ));
     }
 }

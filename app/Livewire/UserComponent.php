@@ -83,6 +83,9 @@ class UserComponent extends Component
 
     public function store()
     {
+        $isUpdate = (bool) $this->user_id;
+        abort_unless(auth()->user()?->can($isUpdate ? 'usuarios.editar' : 'usuarios.crear'), 403);
+
         $this->validate([
             'name' => 'required|min:3',
             'email' => [
@@ -106,15 +109,18 @@ class UserComponent extends Component
             $data['password'] = Hash::make($this->password);
         }
 
-        $user = User::updateOrCreate(
-            ['id' => $this->user_id],
-            $data
-        );
+        $branch = $isUpdate ? null : $this->currentBranch();
+        abort_unless($isUpdate || $branch, 403);
+
+        $user = $isUpdate
+            ? $this->tenantUsers()->findOrFail($this->user_id)
+            : new User();
+        $user->fill($data)->save();
 
         $role = Role::where('company_id', $this->currentCompanyId())->where('name', $this->role)->firstOrFail();
         $user->syncRoles([$role]);
 
-        if (!$this->user_id && ($branch = $this->currentBranch())) {
+        if (!$isUpdate) {
             $user->companies()->syncWithoutDetaching([$branch->company_id]);
             $user->branches()->syncWithoutDetaching([$branch->id]);
         }
@@ -143,6 +149,8 @@ class UserComponent extends Component
 
     public function deleteConfirm($id)
     {
+        abort_unless(auth()->user()?->can('usuarios.eliminar'), 403);
+
         if ($id === Auth::user()->id) {
             $this->dispatch('swal', [
                 'title' => 'Error',
@@ -158,6 +166,8 @@ class UserComponent extends Component
     #[On('delete-confirmed')]
     public function destroy($id)
     {
+        abort_unless(auth()->user()?->can('usuarios.eliminar'), 403);
+
         $user = $this->tenantUsers()->findOrFail($id);
         $companyId = $this->currentCompanyId();
 

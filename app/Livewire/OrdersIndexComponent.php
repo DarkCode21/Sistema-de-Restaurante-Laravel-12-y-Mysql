@@ -107,13 +107,12 @@ class OrdersIndexComponent extends Component
                     'status' => 'cerrado',
                     'amount_pending' => 0,
                 ]);
-                $order->table?->update(['status' => 'libre']);
             }
 
             return true;
         });
 
-        if ($updated !== 1) {
+        if (!$updated) {
             $this->dispatch('swal', [
                 'title' => 'Aún no disponible',
                 'text' => 'Solo se pueden entregar productos listos o que no requieren cocina.',
@@ -186,7 +185,7 @@ class OrdersIndexComponent extends Component
                     'total' => 0,
                     'amount_pending' => 0,
                 ]);
-                $order->table?->update(['status' => 'libre']);
+                $order->releaseTables();
             } else {
                 $newTotal = (float) $remainingDetails->sum('subtotal') + (float) $remainingDetails->sum('tax');
                 $order->update([

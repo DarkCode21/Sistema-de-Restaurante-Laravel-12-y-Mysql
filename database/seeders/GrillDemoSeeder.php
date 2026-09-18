@@ -27,29 +27,72 @@ use Carbon\Carbon;
 use App\Support\TenantSeedContext;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 class GrillDemoSeeder extends Seeder
 {
+    private const PRODUCT_IMAGES = [
+        '¼ Pollo a la Parrilla' => 'products/quarter-chicken.webp',
+        'Agua Mineral' => 'products/agua-mineral.webp',
+        'Anticuchos de Corazón' => 'products/anticuchos.webp',
+        'Bife a la Parrilla' => 'products/bife.webp',
+        'Brochetas de Cerdo' => 'products/brochetas.webp',
+        'Cerveza Pilsen' => 'products/pilsen.webp',
+        'Chicha Morada' => 'products/chicha-morada.webp',
+        'Choclo a la Parrilla' => 'products/choclo.webp',
+        'Coca-Cola Personal' => 'products/coca-cola.webp',
+        'Combo Parrillero Dúo' => 'products/combo-duo.webp',
+        'Combo Parrillero Personal' => 'products/combo-personal.webp',
+        'Costillas de Cerdo BBQ' => 'products/costillas.webp',
+        'Ensalada Criolla' => 'products/ensalada-criolla.webp',
+        'Huevo Frito' => 'products/huevo-frito.webp',
+        'Inca Kola Personal' => 'products/inca-kola.webp',
+        'Maracuyá Frozen' => 'products/maracuya.webp',
+        'Papas a elección' => 'products/papas-eleccion.webp',
+        'Papas Ancochadas' => 'products/papas-ancochadas.webp',
+        'Parrilla de Carne' => 'products/grilled-beef.webp',
+        'Parrilla de Cerdo' => 'products/grilled-pork.webp',
+        'Parrilla de Pollo - Pecho' => 'products/chicken-breast.webp',
+        'Parrilla de Pollo - Pierna' => 'products/chicken-leg.webp',
+        'Parrilla Familiar' => 'products/parrilla-familiar.webp',
+        'Plátano a la Parrilla' => 'products/platano.webp',
+        'Pollo Entero a la Parrilla' => 'products/whole-chicken.webp',
+        'Porción de Arroz Blanco' => 'products/arroz.webp',
+        'Salsa Chimichurri' => 'products/chimichurri.webp',
+        'Salsa de Ají' => 'products/aji.webp',
+    ];
+
     private ?Company $seedCompany = null;
     private ?Branch $seedBranch = null;
     private array $staff = [
         'operator' => ['email' => 'admin@gmail.com', 'name' => 'Administrador'],
         'grill_cook' => ['email' => 'parrillero@demo.local', 'name' => 'Parrillero Demo'],
         'kitchen_cook' => ['email' => 'cocina@demo.local', 'name' => 'Cocinero Demo'],
+        'waiters' => [
+            ['email' => 'mesero@gmail.com', 'name' => 'Carlos Paredes'],
+            ['email' => 'mesera@gmail.com', 'name' => 'Lucía Torres'],
+            ['email' => 'mesero2@gmail.com', 'name' => 'Diego Ramos'],
+        ],
     ];
 
     public function forBranch(Company $company, Branch $branch, array $staff): self
     {
         $this->seedCompany = $company;
         $this->seedBranch = $branch;
-        $this->staff = $staff;
+        $this->staff = [...$this->staff, ...$staff];
 
         return $this;
     }
 
     public function run(): void
     {
+        if (app()->environment('production')) {
+            return;
+        }
+
         $company = $this->seedCompany ?? Company::query()->firstOrFail();
         $branch = $this->seedBranch ?? $company->branches()->firstOrFail();
 
@@ -83,7 +126,22 @@ class GrillDemoSeeder extends Seeder
                     'email_verified_at' => now(),
                 ],
             );
-            foreach ([$operator, $grillCook, $kitchenCook] as $user) {
+            $waiters = collect($this->staff['waiters'])->map(fn (array $waiter) => User::firstOrCreate(
+                ['email' => $waiter['email']],
+                [
+                    'name' => $waiter['name'],
+                    'password' => Hash::make('admin123'),
+                    'type' => 'user',
+                    'email_verified_at' => now(),
+                ],
+            ))->all();
+            $waiterRole = Role::query()->where('company_id', $company->id)->where('name', 'mesero')->first();
+            if ($waiterRole) {
+                foreach ($waiters as $waiter) {
+                    $waiter->assignRole($waiterRole);
+                }
+            }
+            foreach ([$operator, $grillCook, $kitchenCook, ...$waiters] as $user) {
                 $user->companies()->syncWithoutDetaching([$company->id]);
                 $user->branches()->syncWithoutDetaching([$branch->id]);
             }
@@ -145,21 +203,53 @@ class GrillDemoSeeder extends Seeder
                 ['Bebidas', 'Cerveza Pilsen', 10.00, 70, 'products/grill-drinks.png', false],
             ];
 
-            $products = collect($menu)->mapWithKeys(function (array $item) use ($categories): array {
+            $directCosts = [
+                'Costillas de Cerdo BBQ' => 12,
+                'Brochetas de Cerdo' => 7,
+                'Bife a la Parrilla' => 16,
+                'Anticuchos de Corazón' => 8,
+                'Porción de Arroz Blanco' => 1,
+                'Papas Ancochadas' => 2,
+                'Choclo a la Parrilla' => 2,
+                'Plátano a la Parrilla' => 2,
+                'Huevo Frito' => 1,
+                'Salsa Chimichurri' => 1,
+                'Salsa de Ají' => 1,
+                'Chicha Morada' => 2,
+                'Maracuyá Frozen' => 3,
+                'Inca Kola Personal' => 3,
+                'Coca-Cola Personal' => 3,
+                'Agua Mineral' => 1,
+                'Cerveza Pilsen' => 5,
+            ];
+
+            $products = collect($menu)->mapWithKeys(function (array $item) use ($categories, $directCosts): array {
                 [$categoryName, $name, $price, $stock, $image, $requiresKitchen] = $item;
+                $cost = $directCosts[$name] ?? null;
+                $image = self::PRODUCT_IMAGES[$name] ?? $image;
+
+                if (isset(self::PRODUCT_IMAGES[$name])) {
+                    Storage::disk('public')->put($image, File::get(database_path('seeders/media/' . $image)));
+                }
 
                 $product = Product::updateOrCreate(
                     ['name' => $name],
                     [
                         'category_id' => $categories[$categoryName]->id,
                         'price' => $price,
-                        'cost' => round($price * 0.38, 4),
+                        'cost' => $cost,
                         'stock' => $stock,
                         'status' => true,
                         'image' => $image,
                         'requires_kitchen' => $requiresKitchen,
                     ],
                 );
+                $product->branchStocks()->updateOrCreate([], [
+                    'stock' => $stock,
+                    'price' => $price,
+                    'cost' => $cost,
+                    'is_available' => true,
+                ]);
 
                 return [$name => $product];
             });
@@ -174,7 +264,7 @@ class GrillDemoSeeder extends Seeder
                     [
                         'category_id' => $categories['Parrillas de Pollo']->id,
                         'price' => 0,
-                        'cost' => 0,
+                        'cost' => null,
                         'stock' => $stock,
                         'status' => false,
                         'image' => 'products/grill-chicken.png',
@@ -352,6 +442,7 @@ class GrillDemoSeeder extends Seeder
 
             $closedTurns = [];
             foreach ($historicTickets as $index => [$paidAt, $tableName, $customer, $paymentMethods, $lines]) {
+                $waiter = $waiters[$index % count($waiters)];
                 $dateKey = $paidAt->toDateString();
                 $ticketRegister = $paidAt->isToday()
                     ? $cashRegister
@@ -364,7 +455,7 @@ class GrillDemoSeeder extends Seeder
                     ));
                 $this->createCompletedTicket(
                     $tables[$tableName],
-                    $operator,
+                    $waiter,
                     $ticketRegister,
                     $methods,
                     $paymentMethods,
@@ -407,15 +498,15 @@ class GrillDemoSeeder extends Seeder
                     - collect($demoExpenses)->sum(fn (array $expense) => $expense[2]),
             ]);
 
-            $this->createOpenOrder($tables['Mesa 2'], $operator, $products, 'María López', 'DEMO-GRILL-OPEN-01', [
+            $this->createOpenOrder($tables['Mesa 2'], $waiters[0], $products, 'María López', 'DEMO-GRILL-OPEN-01', [
                 ['Combo Parrillero Personal', 1, null],
                 ['Chicha Morada', 2, null],
             ]);
-            $this->createOpenOrder($tables['Mesa 5'], $operator, $products, 'Roberto Díaz', 'DEMO-GRILL-OPEN-02', [
+            $this->createOpenOrder($tables['Mesa 5'], $waiters[1], $products, 'Roberto Díaz', 'DEMO-GRILL-OPEN-02', [
                 ['Combo Parrillero Dúo', 1, null],
                 ['Salsa Chimichurri', 1, null],
             ]);
-            $this->createOpenOrder($tables['Terraza 1'], $operator, $products, 'Familia Castro', 'DEMO-GRILL-OPEN-03', [
+            $this->createOpenOrder($tables['Terraza 1'], $waiters[2], $products, 'Familia Castro', 'DEMO-GRILL-OPEN-03', [
                 ['Parrilla de Cerdo', 2, 'Sin cebolla'],
                 ['Choclo a la Parrilla', 2, 'Sin mantequilla'],
                 ['Coca-Cola Personal', 2, null],
@@ -439,7 +530,12 @@ class GrillDemoSeeder extends Seeder
         SaleDetail::whereIn('sale_id', $saleIds)->delete();
         Sale::withoutGlobalScopes()->whereIn('id', $saleIds)->delete();
         Order::withoutGlobalScopes()->whereIn('id', $orderIds)->delete();
-        Expense::withoutGlobalScopes()->withTrashed()->where('branch_id', $branchId)->where('concept', 'like', 'DEMO-GRILL-%')->forceDelete();
+        Expense::withoutGlobalScopes()->withTrashed()
+            ->where('branch_id', $branchId)
+            ->where(fn ($query) => $query
+                ->where('concept', 'like', 'DEMO-GRILL-%')
+                ->orWhereIn('cash_register_id', $cashRegisterIds))
+            ->forceDelete();
         Purchase::withoutGlobalScopes()->whereIn('id', $purchaseIds)->delete();
         CashRegisterPaymentClosure::whereIn('cash_register_id', $cashRegisterIds)->delete();
         CashRegister::withoutGlobalScopes()->withTrashed()->whereIn('id', $cashRegisterIds)->forceDelete();

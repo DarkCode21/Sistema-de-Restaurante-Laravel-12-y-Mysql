@@ -65,7 +65,10 @@
             <div data-floor-scroll class="restaurant-floor-scroll border-t border-slate-50">
                 <div id="floor-canvas" data-layout-editor="{{ $layoutEditor ? 'true' : 'false' }}" class="restaurant-floor-canvas">
                     @forelse ($tables as $table)
-                        <x-restaurant-table :table="$table" :order="$table->orders->first()" :configuration="$layoutEditor" :selected="(int) $selectedTableId === $table->id" />
+                        @php
+                            $tableOrders = $table->orders->merge($table->joinedOrders);
+                        @endphp
+                        <x-restaurant-table :table="$table" :order="$tableOrders->first(fn ($order) => !$order->sale) ?? $tableOrders->first()" :configuration="$layoutEditor" :selected="(int) $selectedTableId === $table->id" />
                     @empty
                         <div class="absolute inset-0 grid place-items-center text-center">
                             <div>
@@ -76,8 +79,10 @@
                     @endforelse
                     @if (!$layoutEditor && $selectedTable)
                         @php
-                            $selectedOrder = $selectedTable->orders->first();
+                            $selectedOrders = $selectedTable->orders->merge($selectedTable->joinedOrders);
+                            $selectedOrder = $selectedOrders->first(fn ($order) => !$order->sale) ?? $selectedOrders->first();
                             $selectedReady = $selectedOrder?->is_ready_for_checkout && !$selectedOrder?->sale()->exists();
+                            $canRelease = $selectedTable->status === 'ocupada' && $selectedOrders->isEmpty();
                             $selectedActionX = min((int) $selectedTable->x_pos + 20, 980);
                             $selectedActionY = (int) $selectedTable->y_pos + (int) $selectedTable->table_height + 36;
                             $selectedActionY = $selectedActionY > 780 ? max(0, (int) $selectedTable->y_pos - 42) : $selectedActionY;
@@ -85,7 +90,13 @@
                         <aside class="restaurant-table-actions" style="--restaurant-table-action-x: {{ $selectedActionX }}px; --restaurant-table-action-y: {{ $selectedActionY }}px;">
                             <span class="restaurant-table-actions__name">{{ $selectedTable->name }}</span>
                             @can('ordenes.crear')
-                                <a href="{{ route('orders.create', encrypt($selectedTable->id)) }}" class="restaurant-table-actions__primary">{{ $selectedOrder ? 'Gestionar' : 'Atender' }}</a>
+                                <a href="{{ route('orders.create', encrypt($selectedOrder?->table_id ?? $selectedTable->id)) }}" class="restaurant-table-actions__primary">{{ $selectedOrder ? 'Gestionar' : ($selectedTable->status === 'ocupada' ? 'Agregar consumo' : 'Atender') }}</a>
+                                @if ($selectedOrder && !$selectedOrder->sale)
+                                    <button wire:click="openJoinTables({{ $selectedOrder->id }})" class="restaurant-table-actions__checkout">Unir mesas</button>
+                                @endif
+                                @if ($canRelease)
+                                    <button wire:click="releaseTable({{ $selectedTable->id }})" class="restaurant-table-actions__checkout">Liberar mesa</button>
+                                @endif
                             @endcan
                             @can('ordenes.cobrar')
                                 @if ($selectedReady)
@@ -159,6 +170,36 @@
                     </aside>
                 </div>
             </div>
+        </div>
+    @endif
+
+    @if ($showJoinTables && $joinOrder)
+        <div class="fixed inset-0 z-[100] grid place-items-center p-4">
+            <div class="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" wire:click="closeJoinTables"></div>
+            <form wire:submit="saveJoinedTables" class="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <p class="text-[10px] font-black uppercase tracking-[0.2em] text-orange-600">Pedido compartido</p>
+                        <h2 class="mt-1 text-xl font-black text-slate-900">Unir mesas</h2>
+                        <p class="mt-2 text-xs text-slate-500">{{ $joinOrder->table->name }} será la mesa principal del pedido.</p>
+                    </div>
+                    <button type="button" wire:click="closeJoinTables" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+
+                <div class="mt-5 max-h-72 space-y-2 overflow-y-auto">
+                    @forelse ($joinableTables as $table)
+                        <label wire:key="join-table-{{ $table->id }}" class="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 hover:border-orange-300 hover:bg-orange-50">
+                            <input wire:model="joinedTableIds" type="checkbox" value="{{ $table->id }}" class="rounded border-slate-300 text-orange-600 focus:ring-orange-500">
+                            <span class="text-sm font-bold text-slate-700">{{ $table->name }}</span>
+                        </label>
+                    @empty
+                        <p class="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No hay mesas libres en esta planta.</p>
+                    @endforelse
+                </div>
+
+                <p class="mt-4 text-[11px] text-slate-500">Las mesas unidas se liberan juntas al terminar el servicio.</p>
+                <button class="mt-5 w-full rounded-xl bg-slate-900 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-white hover:bg-orange-600">Guardar unión</button>
+            </form>
         </div>
     @endif
 

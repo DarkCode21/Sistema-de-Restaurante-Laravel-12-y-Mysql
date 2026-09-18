@@ -64,6 +64,8 @@ class PaymentMethodComponent extends Component
 
     public function store()
     {
+        abort_unless(auth()->user()?->can($this->payment_method_id ? 'payment_methods.editar' : 'payment_methods.crear'), 403);
+
         $this->validate([
             'name' => [
                 'required',
@@ -125,6 +127,8 @@ class PaymentMethodComponent extends Component
     #[On('delete-confirmed')]
     public function destroy($id)
     {
+        abort_unless(auth()->user()?->can('payment_methods.eliminar'), 403);
+
         PaymentMethod::findOrFail($id)->delete();
 
         $this->dispatch('swal', [

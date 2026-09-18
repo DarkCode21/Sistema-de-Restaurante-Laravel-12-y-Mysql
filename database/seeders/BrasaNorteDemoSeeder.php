@@ -53,6 +53,11 @@ class BrasaNorteDemoSeeder extends Seeder
                 'operator' => ['email' => 'admin@demo.local', 'name' => 'Administradora Demo'],
                 'grill_cook' => ['email' => 'parrillero@demo.local', 'name' => 'Parrillero Demo'],
                 'kitchen_cook' => ['email' => 'cocina@demo.local', 'name' => 'Cocinero Demo'],
+                'waiters' => [
+                    ['email' => 'mesero@demo.local', 'name' => 'Carlos Demo'],
+                    ['email' => 'mesera@demo.local', 'name' => 'Lucía Demo'],
+                    ['email' => 'mesero2@demo.local', 'name' => 'Diego Demo'],
+                ],
             ])->run();
         }
 
@@ -81,6 +86,11 @@ class BrasaNorteDemoSeeder extends Seeder
                 'operator' => ['email' => 'admin@brasanorte.demo.local', 'name' => 'Administradora Brasa Norte'],
                 'grill_cook' => ['email' => 'parrillero@brasanorte.demo.local', 'name' => 'Parrillero Brasa Norte'],
                 'kitchen_cook' => ['email' => 'cocina@brasanorte.demo.local', 'name' => 'Cocinero Brasa Norte'],
+                'waiters' => [
+                    ['email' => 'mesero@brasanorte.demo.local', 'name' => 'Carlos Brasa Norte'],
+                    ['email' => 'mesera@brasanorte.demo.local', 'name' => 'Lucía Brasa Norte'],
+                    ['email' => 'mesero2@brasanorte.demo.local', 'name' => 'Diego Brasa Norte'],
+                ],
             ])->run();
 
             setPermissionsTeamId($company->id);
@@ -88,7 +98,9 @@ class BrasaNorteDemoSeeder extends Seeder
                 ['email' => 'admin@brasanorte.demo.local', 'role' => 'admin'],
                 ['email' => 'parrillero@brasanorte.demo.local', 'role' => 'cocinero'],
                 ['email' => 'cocina@brasanorte.demo.local', 'role' => 'cocinero'],
-                ['email' => 'mesero@brasanorte.demo.local', 'name' => 'Mesero Brasa Norte', 'role' => 'mesero'],
+                ['email' => 'mesero@brasanorte.demo.local', 'name' => 'Carlos Brasa Norte', 'role' => 'mesero'],
+                ['email' => 'mesera@brasanorte.demo.local', 'name' => 'Lucía Brasa Norte', 'role' => 'mesero'],
+                ['email' => 'mesero2@brasanorte.demo.local', 'name' => 'Diego Brasa Norte', 'role' => 'mesero'],
                 ['email' => 'cajera@brasanorte.demo.local', 'name' => 'Cajera Brasa Norte', 'role' => 'cajero'],
             ];
 
@@ -141,7 +153,7 @@ class BrasaNorteDemoSeeder extends Seeder
             Product::query()->get()->each(function (Product $product): void {
                 $price = (float) $product->getRawOriginal('price');
                 $product->branchStocks()->updateOrCreate([], [
-                    'price' => $price > 0 ? round($price * 1.1, 2) : 0,
+                    'price' => $price,
                     'cost' => $product->getRawOriginal('cost'),
                     'is_available' => $product->name !== 'Salsa de Ají',
                 ]);

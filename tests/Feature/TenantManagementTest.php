@@ -74,8 +74,10 @@ it('saves settings for the selected company', function () {
             'currency_simbol' => 'S/',
             'default_tax_rate' => 18,
             'timezone' => 'America/Lima',
+            'tips_enabled' => 0,
         ])
         ->assertSessionHasNoErrors();
 
-    expect(Setting::withoutGlobalScopes()->where('company_id', $company->id)->value('company_name'))->toBe('Cevichería Sur');
+    expect(Setting::withoutGlobalScopes()->where('company_id', $company->id)->value('company_name'))->toBe('Cevichería Sur')
+        ->and((bool) Setting::withoutGlobalScopes()->where('company_id', $company->id)->value('tips_enabled'))->toBeFalse();
 });

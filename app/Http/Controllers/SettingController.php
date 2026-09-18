@@ -27,7 +27,7 @@ class SettingController extends Controller
             'default_tax_rate' => 'required|numeric|min:0|max:100',
             'tax_id' => 'nullable|string|max:50',
             'timezone' => 'required|string',
-            'logo_path' => 'nullable|image|mimes:jpeg,png,jpg,svg|max:2048',
+            'logo_path' => 'nullable|image|mimes:jpeg,png,jpg,svg,webp|max:2048',
             'favicon_path' => 'nullable|image|mimes:png,ico|max:512',
             'social_networks' => 'nullable|array',
 
@@ -35,6 +35,7 @@ class SettingController extends Controller
             'direct_printing' => 'boolean',
             'separate_orders' => 'boolean',
             'alert_sounds_enabled' => 'boolean',
+            'tips_enabled' => 'boolean',
 
             'printer_name' => 'required_if:direct_printing,1|nullable|string|max:255',
 
@@ -50,7 +51,7 @@ class SettingController extends Controller
             'timezone.required' => 'Debes seleccionar una zona horaria.',
 
             'logo_path.image' => 'El logo debe ser una imagen válida.',
-            'logo_path.mimes' => 'El logo solo acepta formatos: jpeg, png, jpg o svg.',
+            'logo_path.mimes' => 'El logo solo acepta formatos: jpeg, png, jpg, svg o webp.',
             'logo_path.max' => 'El logo no debe pesar más de 2 MB (2048 KB).',
 
             'favicon_path.image' => 'El favicon debe ser una imagen.',
@@ -69,6 +70,9 @@ class SettingController extends Controller
         $validated['direct_printing'] = $request->boolean('direct_printing');
         $validated['separate_orders'] = $request->boolean('separate_orders');
         $validated['alert_sounds_enabled'] = $request->boolean('alert_sounds_enabled');
+        $validated['tips_enabled'] = $request->has('tips_enabled')
+            ? $request->boolean('tips_enabled')
+            : (bool) ($setting->tips_enabled ?? true);
 
         $validated['printer_name'] = $validated['direct_printing']
             ? $request->input('printer_name')

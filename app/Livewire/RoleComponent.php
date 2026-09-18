@@ -76,6 +76,8 @@ class RoleComponent extends Component
 
     public function store()
     {
+        abort_unless(auth()->user()?->can('roles.editar'), 403);
+
         $this->validate([
             'name' => [
                 'required',
@@ -124,6 +126,8 @@ class RoleComponent extends Component
     #[On('delete-confirmed')]
     public function destroy($id)
     {
+        abort_unless(auth()->user()?->can('roles.editar'), 403);
+
         Role::where('company_id', session('company_id'))->findOrFail($id)->delete();
 
         $this->dispatch('swal', [

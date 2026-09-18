@@ -61,6 +61,8 @@ class CategoryComponent extends Component
 
     public function store()
     {
+        abort_unless(auth()->user()?->can($this->category_id ? 'categorias.editar' : 'categorias.crear'), 403);
+
         $this->validate([
             'name' => [
                 'required',
@@ -104,6 +106,8 @@ class CategoryComponent extends Component
     #[On('delete-confirmed')]
     public function destroy($id)
     {
+        abort_unless(auth()->user()?->can('categorias.eliminar'), 403);
+
         Category::findOrFail($id)->delete();
 
         $this->dispatch('swal', [

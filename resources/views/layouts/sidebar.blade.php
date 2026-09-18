@@ -9,7 +9,7 @@
 
     <div class="flex items-center justify-between h-20 px-5 bg-slate-50/50 border-b border-slate-100 shrink-0">
         <a class="flex items-center gap-3 overflow-hidden" href="{{ route('dashboard') }}">
-            <x-application-logo class="w-10 h-10 fill-current text-orange-600 shrink-0" />
+            <x-application-logo class="h-10 w-10 shrink-0 rounded-xl object-cover object-center" />
             <span class="font-bold text-xl transition-all duration-300 truncate"
                 :class="sidebarExpanded ? 'opacity-100' : 'opacity-0 invisible w-0'">
                 {{ $empresa->company_name ?? config('app.name', 'Finanzas') }}
@@ -214,6 +214,19 @@
                 </li>
             @endcan
 
+            @can('ventas.ver')
+                <li>
+                    <a href="{{ route('audits.index') }}"
+                        class="flex items-center px-3 py-2.5 rounded-xl transition-all duration-200 group
+                        {{ request()->routeIs('audits.index') ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50 hover:text-orange-600' }}">
+                        <i class="fa-solid fa-clipboard-list w-5 text-center {{ request()->routeIs('audits.index') ? 'text-orange-600' : 'text-slate-400 group-hover:text-orange-600' }}"></i>
+                        <div class="ml-3 transition-all duration-200 overflow-hidden whitespace-nowrap" :class="sidebarExpanded ? 'opacity-100 visible w-auto' : 'opacity-0 invisible w-0'">
+                            <span class="text-sm {{ request()->routeIs('audits.index') ? 'font-bold' : 'font-medium' }}">Auditoría</span>
+                        </div>
+                    </a>
+                </li>
+            @endcan
+
             {{-- REPORTE DE PROMOCIONES --}}
             @can('ventas.reportes')
                 @php
@@ -249,6 +262,22 @@
                         </div>
                     </a>
                 </li>
+                @if ($empresa->tips_enabled ?? true)
+                    @php
+                        $isTipsReportActive = request()->routeIs('reports.tips');
+                    @endphp
+                    <li>
+                        <a href="{{ route('reports.tips') }}"
+                            class="flex items-center px-3 py-2.5 rounded-xl transition-all duration-200 group
+                            {{ $isTipsReportActive ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-slate-50 hover:text-orange-600' }}">
+                            <i class="fa-solid fa-hand-holding-heart w-5 text-center {{ $isTipsReportActive ? 'text-orange-600' : 'text-slate-400 group-hover:text-orange-600' }}"></i>
+                            <div class="ml-3 transition-all duration-200 overflow-hidden whitespace-nowrap"
+                                :class="sidebarExpanded ? 'opacity-100 visible w-auto' : 'opacity-0 invisible w-0'">
+                                <span class="text-sm {{ $isTipsReportActive ? 'font-bold' : 'font-medium' }}">Propinas</span>
+                            </div>
+                        </a>
+                    </li>
+                @endif
             @endcan
 
             {{-- ALMACÉN (Productos y Categorías) --}}

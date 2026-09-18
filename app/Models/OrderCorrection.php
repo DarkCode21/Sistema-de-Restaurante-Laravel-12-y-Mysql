@@ -45,13 +45,13 @@ class OrderCorrection extends Model
 
     public static function record(OrderDetail $detail, string $action): self
     {
-        $order = $detail->order()->with('table')->first();
+        $order = $detail->order()->with(['table', 'joinedTables'])->first();
 
         return static::create([
             'order_id' => $detail->order_id,
             'order_detail_id' => $detail->id,
             'preparation_station_id' => $detail->preparation_station_id,
-            'table_name' => $order?->getRelation('table')?->name,
+            'table_name' => $order?->service_label,
             'product_name' => $detail->product?->name ?? 'Producto eliminado',
             'quantity' => $detail->quantity,
             'action' => $action,

@@ -81,3 +81,21 @@ it('shows payment totals for the selected date range', function () {
         ->assertSee('20.00')
         ->assertSee('15.00');
 });
+
+it('filters sales history by waiter and customer', function () {
+    $firstWaiter = User::factory()->create(['name' => 'Mesero Uno']);
+    $secondWaiter = User::factory()->create(['name' => 'Mesero Dos']);
+    $firstOrder = Order::create(['user_id' => $firstWaiter->id, 'customer_name' => 'Cliente Uno', 'status' => 'cerrado']);
+    $secondOrder = Order::create(['user_id' => $secondWaiter->id, 'customer_name' => 'Cliente Dos', 'status' => 'cerrado']);
+    $firstSale = Sale::create(['order_id' => $firstOrder->id, 'customer_name' => 'Cliente Uno', 'subtotal' => 20, 'tax' => 0, 'tip' => 0, 'total' => 20, 'paid_amount' => 20, 'change' => 0, 'paid_at' => now()]);
+    $secondSale = Sale::create(['order_id' => $secondOrder->id, 'customer_name' => 'Cliente Dos', 'subtotal' => 15, 'tax' => 0, 'tip' => 0, 'total' => 15, 'paid_amount' => 15, 'change' => 0, 'paid_at' => now()]);
+
+    Livewire::test(SalesIndexComponent::class)
+        ->set('fromDate', now()->format('Y-m-d'))
+        ->set('toDate', now()->format('Y-m-d'))
+        ->set('waiter', 'Mesero Uno')
+        ->assertViewHas('sales', fn ($sales) => $sales->pluck('id')->all() === [$firstSale->id])
+        ->set('waiter', '')
+        ->set('customer', 'Cliente Dos')
+        ->assertViewHas('sales', fn ($sales) => $sales->pluck('id')->all() === [$secondSale->id]);
+});

@@ -47,4 +47,9 @@ class Table extends Model
     {
         return $this->hasMany(Order::class);
     }
+
+    public function joinedOrders()
+    {
+        return $this->belongsToMany(Order::class, 'order_table')->withTimestamps();
+    }
 }

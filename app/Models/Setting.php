@@ -23,6 +23,7 @@ class Setting extends Model
         'direct_printing',
         'separate_orders',
         'alert_sounds_enabled',
+        'tips_enabled',
         'printer_name',
         'kitchen_printer_name',
         'social_networks',
@@ -33,6 +34,7 @@ class Setting extends Model
         'direct_printing' => 'boolean',
         'separate_orders' => 'boolean',
         'alert_sounds_enabled' => 'boolean',
+        'tips_enabled' => 'boolean',
         'default_tax_rate' => 'decimal:2',
     ];
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CashRegisterController;
+use App\Http\Controllers\AuditController;
 use App\Http\Controllers\BranchContextController;
 use App\Http\Controllers\CrudController;
 use App\Http\Controllers\DashboardController;
@@ -77,6 +78,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/orders/ticket/{id}', [OrderController::class, 'ticket'])->name('orders.ticket')->middleware('can:ordenes.ver');
 
     Route::get('/sales', [SaleController::class, 'index'])->name('sales.index')->middleware('can:ventas.ver');
+    Route::get('/audits', [AuditController::class, 'index'])->name('audits.index')->middleware('can:ventas.ver');
     Route::get('/sales/{id}/receipt', [SaleController::class, 'receipt'])->name('sales.receipt')->middleware('can:ventas.ver');
 
     Route::get('/reports/sales/pdf', [SaleController::class, 'salesPdf'])->name('sales.report.pdf')->middleware('can:ventas.reportes');
@@ -84,6 +86,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/reports/promotions', [ReportController::class, 'promotions'])->name('reports.promotions')->middleware('can:ventas.reportes');
     Route::get('/reports/profit', [ReportController::class, 'profit'])->name('reports.profit')->middleware('can:ventas.reportes');
+    Route::view('/reports/tips', 'tips.index')->name('reports.tips')->middleware('can:ventas.reportes');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

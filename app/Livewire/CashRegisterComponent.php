@@ -64,6 +64,8 @@ class CashRegisterComponent extends Component
 
     public function store()
     {
+        abort_unless(auth()->user()?->can($this->cash_register_id ? 'cajas.editar' : 'cajas.crear'), 403);
+
         $this->validate([
             'terminal_id' => $this->cash_register_id ? 'nullable' : 'required|exists:cash_terminals,id',
             'opening_amount' => 'required|numeric|min:0',
@@ -181,6 +183,8 @@ class CashRegisterComponent extends Component
 
     public function addTerminal(): void
     {
+        abort_unless(auth()->user()?->can('cajas.crear'), 403);
+
         $this->validate(['new_terminal_name' => 'required|string|min:3|max:50|unique:cash_terminals,name']);
 
         $terminal = CashTerminal::create(['name' => trim($this->new_terminal_name), 'is_active' => true]);
@@ -217,6 +221,8 @@ class CashRegisterComponent extends Component
     #[On('delete-confirmed')]
     public function destroy($id)
     {
+        abort_unless(auth()->user()?->can('cajas.eliminar'), 403);
+
         $deleted = DB::transaction(function () use ($id) {
             $register = CashRegister::query()
                 ->whereKey($id)

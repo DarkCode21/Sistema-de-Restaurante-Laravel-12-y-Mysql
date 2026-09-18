@@ -62,4 +62,14 @@ class CashRegister extends Model
     {
         return $this->hasMany(CashRegisterPaymentClosure::class);
     }
+
+    public function tipPayouts(): HasMany
+    {
+        return $this->hasMany(TipPayout::class);
+    }
+
+    public function tipAdjustments(): HasMany
+    {
+        return $this->hasMany(TipAdjustment::class);
+    }
 }

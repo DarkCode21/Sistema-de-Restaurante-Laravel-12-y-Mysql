@@ -69,6 +69,8 @@ class IngredientComponent extends Component
 
     public function store(): void
     {
+        abort_unless(auth()->user()?->can($this->ingredient_id ? 'productos.editar' : 'productos.crear'), 403);
+
         $this->validate([
             'name' => ['required', 'string', 'max:100', Rule::unique('ingredients', 'name')->where('company_id', session('company_id'))->ignore($this->ingredient_id)],
             'unit' => ['required', Rule::in(Ingredient::UNITS)],
@@ -103,6 +105,8 @@ class IngredientComponent extends Component
     #[On('delete-confirmed')]
     public function destroy(int $id): void
     {
+        abort_unless(auth()->user()?->can('productos.eliminar'), 403);
+
         $ingredient = Ingredient::findOrFail($id);
 
         if ($ingredient->products()->exists() || $ingredient->usages()->exists()) {

@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\DiningArea;
+use App\Models\Order;
 use App\Models\RestaurantFloor;
 use App\Models\Table;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,8 @@ class TableComponent extends Component
     private const CANVAS_WIDTH = 1200;
     private const CANVAS_HEIGHT = 820;
     private const GRID_SIZE = 20;
-    private const TABLE_CLEARANCE = 48;
+    private const MAP_PADDING = 16;
+    private const TABLE_GAP = 16;
 
     public $name = '';
     public $capacity = '';
@@ -39,6 +41,9 @@ class TableComponent extends Component
     public $selectedTableId = null;
     public $layoutEditor = false;
     public $isOpen = false;
+    public $showJoinTables = false;
+    public $joinOrderId = null;
+    public $joinedTableIds = [];
 
     public function mount(): void
     {
@@ -103,6 +108,148 @@ class TableComponent extends Component
     public function selectTable(int $tableId): void
     {
         $this->selectedTableId = $this->selectedTableId === $tableId ? null : $tableId;
+    }
+
+    public function releaseTable(int $tableId): void
+    {
+        abort_unless(auth()->user()?->can('ordenes.crear'), 403);
+
+        $released = DB::transaction(function () use ($tableId) {
+            $orders = Order::query()
+                ->where(fn ($query) => $query->where('table_id', $tableId)
+                    ->orWhereHas('joinedTables', fn ($tables) => $tables->whereKey($tableId)))
+                ->with('joinedTables:id')
+                ->lockForUpdate()
+                ->get();
+            $tableIds = $orders->pluck('table_id')
+                ->merge($orders->flatMap->joinedTables->pluck('id'))
+                ->push($tableId)
+                ->unique()
+                ->values();
+            $tables = Table::query()->whereKey($tableIds)->lockForUpdate()->get();
+
+            if ($tables->isEmpty() || $tables->contains(fn (Table $table) => $table->status !== 'ocupada') || $orders
+                ->where('status', 'abierto')
+                ->contains(fn (Order $order) => $order->details()
+                ->where('cooking_status', '!=', 'cancelled')
+                ->exists())) {
+                return false;
+            }
+
+            DB::table('order_table')->whereIn('order_id', $orders->pluck('id'))->delete();
+            Table::query()->whereKey($tableIds)->update(['status' => 'libre']);
+
+            return true;
+        });
+
+        if (!$released) {
+            $this->dispatch('swal', [
+                'title' => 'Mesa con pedidos activos',
+                'text' => 'Termina o cancela los pedidos antes de liberar la mesa.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
+        $this->selectedTableId = null;
+        $this->dispatch('swal', [
+            'title' => 'Mesa liberada',
+            'text' => 'La mesa ya está disponible para un nuevo cliente.',
+            'icon' => 'success',
+        ]);
+    }
+
+    public function openJoinTables(int $orderId): void
+    {
+        abort_unless(auth()->user()?->can('ordenes.crear'), 403);
+
+        $order = Order::query()
+            ->with('joinedTables:id')
+            ->whereKey($orderId)
+            ->where('status', 'abierto')
+            ->doesntHave('sale')
+            ->first();
+
+        if (!$order) {
+            $this->dispatch('swal', [
+                'title' => 'Pedido no disponible',
+                'text' => 'Solo puedes unir mesas a un pedido abierto sin pagos.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
+        $this->joinOrderId = $order->id;
+        $this->joinedTableIds = $order->joinedTables->pluck('id')->all();
+        $this->showJoinTables = true;
+    }
+
+    public function closeJoinTables(): void
+    {
+        $this->reset(['showJoinTables', 'joinOrderId', 'joinedTableIds']);
+    }
+
+    public function saveJoinedTables(): void
+    {
+        abort_unless(auth()->user()?->can('ordenes.crear'), 403);
+
+        $saved = DB::transaction(function () {
+            $order = Order::query()
+                ->with(['table:id,restaurant_floor_id', 'joinedTables:id,restaurant_floor_id'])
+                ->whereKey($this->joinOrderId)
+                ->where('status', 'abierto')
+                ->doesntHave('sale')
+                ->lockForUpdate()
+                ->first();
+
+            if (!$order || !$order->table) {
+                return false;
+            }
+
+            $joinedTableIds = collect($this->joinedTableIds)
+                ->filter(fn ($id) => filter_var($id, FILTER_VALIDATE_INT) !== false)
+                ->map(fn ($id) => (int) $id)
+                ->reject(fn ($id) => $id === (int) $order->table_id)
+                ->unique()
+                ->values();
+            $currentTableIds = $order->joinedTables->pluck('id');
+            $tableIds = $currentTableIds->merge($joinedTableIds)->push($order->table_id)->unique();
+            $tables = Table::query()->whereKey($tableIds)->lockForUpdate()->get();
+
+            if ($tables->count() !== $tableIds->count() || $tables->contains(
+                fn (Table $table) => $table->restaurant_floor_id != $order->table->restaurant_floor_id
+            )) {
+                return false;
+            }
+
+            $newTableIds = $joinedTableIds->diff($currentTableIds);
+            if ($tables->whereIn('id', $newTableIds)->contains(fn (Table $table) => $table->status !== 'libre')) {
+                return false;
+            }
+
+            $removedTableIds = $currentTableIds->diff($joinedTableIds);
+            $order->joinedTables()->sync($joinedTableIds);
+            Table::query()->whereKey($joinedTableIds->push($order->table_id))->update(['status' => 'ocupada']);
+            Table::query()->whereKey($removedTableIds)->update(['status' => 'libre']);
+
+            return true;
+        });
+
+        if (!$saved) {
+            $this->dispatch('swal', [
+                'title' => 'No se pudieron unir las mesas',
+                'text' => 'Elige mesas libres de la misma planta y vuelve a intentar.',
+                'icon' => 'warning',
+            ]);
+            return;
+        }
+
+        $this->closeJoinTables();
+        $this->dispatch('swal', [
+            'title' => 'Mesas actualizadas',
+            'text' => 'Las mesas seleccionadas comparten el mismo pedido.',
+            'icon' => 'success',
+        ]);
     }
 
     public function closeModal(): void
@@ -211,6 +358,8 @@ class TableComponent extends Component
 
     public function store(): void
     {
+        abort_unless(auth()->user()?->can($this->table_id ? 'mesas.editar' : 'mesas.crear'), 403);
+
         $this->validate([
             'name' => ['required', 'min:2', 'max:50', Rule::unique('tables', 'name')->where('branch_id', session('branch_id'))->ignore($this->table_id)],
             'capacity' => ['required', 'integer', 'min:1', 'max:99'],
@@ -328,7 +477,10 @@ class TableComponent extends Component
                 'diningArea',
                 'orders' => fn ($query) => $query->where('status', 'abierto')
                     ->whereHas('details', fn ($details) => $details->where('cooking_status', '!=', 'cancelled'))
-                    ->with('details'),
+                    ->with(['details', 'sale']),
+                'joinedOrders' => fn ($query) => $query->where('status', 'abierto')
+                    ->whereHas('details', fn ($details) => $details->where('cooking_status', '!=', 'cancelled'))
+                    ->with(['details', 'sale']),
             ])
             ->when($this->selectedFloorId, function ($query) use ($defaultFloorId) {
                 $query->where(function ($query) use ($defaultFloorId) {
@@ -343,8 +495,11 @@ class TableComponent extends Component
             ->when($this->statusFilter, fn ($query) => $query->where('status', $this->statusFilter))
             ->when($this->search, function ($query) {
                 $query->where(function ($query) {
-                    $query->where('name', 'like', '%' . $this->search . '%')
+                        $query->where('name', 'like', '%' . $this->search . '%')
                         ->orWhereHas('orders', fn ($orders) => $orders
+                            ->where('status', 'abierto')
+                            ->where('customer_name', 'like', '%' . $this->search . '%'))
+                        ->orWhereHas('joinedOrders', fn ($orders) => $orders
                             ->where('status', 'abierto')
                             ->where('customer_name', 'like', '%' . $this->search . '%'));
                 });
@@ -354,8 +509,21 @@ class TableComponent extends Component
             ->get();
 
         $selectedTable = $tables->firstWhere('id', (int) $this->selectedTableId);
+        $joinOrder = $this->showJoinTables
+            ? Order::query()->with(['table:id,name,restaurant_floor_id', 'joinedTables:id,name'])->find($this->joinOrderId)
+            : null;
+        $joinableTables = collect();
 
-        return view('livewire.table-component', compact('floors', 'areas', 'tableAreas', 'tables', 'selectedTable'));
+        if ($joinOrder?->table) {
+            $joinableTables = Table::query()
+                ->whereKeyNot($joinOrder->table_id)
+                ->where('restaurant_floor_id', $joinOrder->table->restaurant_floor_id)
+                ->where(fn ($query) => $query->where('status', 'libre')->orWhereIn('id', $this->joinedTableIds))
+                ->orderBy('name')
+                ->get(['id', 'name']);
+        }
+
+        return view('livewire.table-component', compact('floors', 'areas', 'tableAreas', 'tables', 'selectedTable', 'joinOrder', 'joinableTables'));
     }
 
     private function resetInputFields(): void
@@ -401,56 +569,53 @@ class TableComponent extends Component
 
     private function nextAvailablePosition(int $floorId, int $width, int $height): array
     {
-        $maxX = self::CANVAS_WIDTH - (max(1, (int) $width) + self::TABLE_CLEARANCE);
-        $maxY = self::CANVAS_HEIGHT - (max(1, (int) $height) + self::TABLE_CLEARANCE);
+        $maxX = self::CANVAS_WIDTH - (max(1, (int) $width) + self::MAP_PADDING);
+        $maxY = self::CANVAS_HEIGHT - (max(1, (int) $height) + self::MAP_PADDING);
 
-        for ($y = self::GRID_SIZE; $y <= $maxY; $y += self::GRID_SIZE) {
-            for ($x = self::GRID_SIZE; $x <= $maxX; $x += self::GRID_SIZE) {
+        for ($y = self::MAP_PADDING; $y <= $maxY; $y += self::GRID_SIZE) {
+            for ($x = self::MAP_PADDING; $x <= $maxX; $x += self::GRID_SIZE) {
                 if (!$this->layoutCollides($floorId, null, $x, $y, $width, $height)) {
                     return [$x, $y];
                 }
             }
         }
 
-        return [self::GRID_SIZE, self::GRID_SIZE];
+        return [self::MAP_PADDING, self::MAP_PADDING];
     }
 
     private function normalizePosition($x, $y, $width, $height): array
     {
-        $maxX = self::CANVAS_WIDTH - (max(1, (int) $width) + self::TABLE_CLEARANCE);
-        $maxY = self::CANVAS_HEIGHT - (max(1, (int) $height) + self::TABLE_CLEARANCE);
-        $x = max(0, min($maxX, (int) round((float) $x)));
-        $y = max(0, min($maxY, (int) round((float) $y)));
+        $maxX = self::CANVAS_WIDTH - (max(1, (int) $width) + self::MAP_PADDING);
+        $maxY = self::CANVAS_HEIGHT - (max(1, (int) $height) + self::MAP_PADDING);
+        $x = max(self::MAP_PADDING, min($maxX, (int) round((float) $x)));
+        $y = max(self::MAP_PADDING, min($maxY, (int) round((float) $y)));
 
         return [$x, $y];
     }
 
     private function layoutCollides($floorId, $ignoreId, $x, $y, $width, $height): bool
     {
-        $width = max(1, (int) $width) + self::TABLE_CLEARANCE;
-        $height = max(1, (int) $height) + self::TABLE_CLEARANCE;
-
         return Table::query()
             ->where('restaurant_floor_id', $floorId)
             ->when($ignoreId, fn ($query) => $query->whereKeyNot($ignoreId))
             ->get(['x_pos', 'y_pos', 'table_width', 'table_height'])
             ->contains(fn (Table $table) => $this->positionsCollide(
-                ['x' => $x, 'y' => $y, 'width' => $width - self::TABLE_CLEARANCE, 'height' => $height - self::TABLE_CLEARANCE],
+                ['x' => $x, 'y' => $y, 'width' => $width, 'height' => $height],
                 ['x' => $table->x_pos, 'y' => $table->y_pos, 'width' => $table->table_width, 'height' => $table->table_height],
             ));
     }
 
     private function positionsCollide(array $first, array $second): bool
     {
-        $firstWidth = max(1, (int) $first['width']) + self::TABLE_CLEARANCE;
-        $firstHeight = max(1, (int) $first['height']) + self::TABLE_CLEARANCE;
-        $secondWidth = max(1, (int) $second['width']) + self::TABLE_CLEARANCE;
-        $secondHeight = max(1, (int) $second['height']) + self::TABLE_CLEARANCE;
+        $firstWidth = max(1, (int) $first['width']);
+        $firstHeight = max(1, (int) $first['height']);
+        $secondWidth = max(1, (int) $second['width']);
+        $secondHeight = max(1, (int) $second['height']);
 
-        return $first['x'] < $second['x'] + $secondWidth
-            && $first['x'] + $firstWidth > $second['x']
-            && $first['y'] < $second['y'] + $secondHeight
-            && $first['y'] + $firstHeight > $second['y'];
+        return $first['x'] < $second['x'] + $secondWidth + self::TABLE_GAP
+            && $first['x'] + $firstWidth + self::TABLE_GAP > $second['x']
+            && $first['y'] < $second['y'] + $secondHeight + self::TABLE_GAP
+            && $first['y'] + $firstHeight + self::TABLE_GAP > $second['y'];
     }
 
 }

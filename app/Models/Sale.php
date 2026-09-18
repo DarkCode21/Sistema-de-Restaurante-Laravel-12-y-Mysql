@@ -36,6 +36,16 @@ class Sale extends Model
         return $this->hasMany(Payment::class);
     }
 
+    public function paymentEdits()
+    {
+        return $this->hasMany(PaymentEdit::class);
+    }
+
+    public function tipAdjustments()
+    {
+        return $this->hasMany(TipAdjustment::class);
+    }
+
     public function cashRegister()
     {
         return $this->belongsTo(CashRegister::class);
@@ -54,5 +64,23 @@ class Sale extends Model
     public function manualDiscountAuthor()
     {
         return $this->belongsTo(User::class, 'manual_discount_by');
+    }
+
+    public function getAdjustedTipAttribute(): float
+    {
+        $adjustments = $this->relationLoaded('tipAdjustments')
+            ? $this->tipAdjustments->sum('amount')
+            : $this->tipAdjustments()->sum('amount');
+
+        return round((float) $this->tip + (float) $adjustments, 2);
+    }
+
+    public function getAdjustedTotalAttribute(): float
+    {
+        $adjustments = $this->relationLoaded('tipAdjustments')
+            ? $this->tipAdjustments->sum('amount')
+            : $this->tipAdjustments()->sum('amount');
+
+        return round((float) $this->total + (float) $adjustments, 2);
     }
 }

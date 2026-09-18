@@ -77,7 +77,7 @@
                         @csrf
                         <x-dropdown-link :href="route('logout')" 
                                         class="flex items-center gap-2 text-red-600 hover:text-red-700"
-                                        onclick="event.preventDefault(); this.closest('form').submit();">
+                                        onclick="event.preventDefault(); this.closest('form').requestSubmit();">
                             <i class="fa-solid fa-arrow-right-from-bracket w-4"></i> Cerrar Sesión
                         </x-dropdown-link>
                     </form>

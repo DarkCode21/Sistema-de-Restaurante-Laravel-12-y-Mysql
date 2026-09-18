@@ -15,6 +15,7 @@ function layoutAdmin(): User
     $user = User::factory()->create();
     $permission = Permission::firstOrCreate(['name' => 'mesas.editar']);
     $user->givePermissionTo($permission);
+    $user->givePermissionTo(Permission::firstOrCreate(['name' => 'mesas.crear']));
     $user->givePermissionTo(Permission::firstOrCreate(['name' => 'mesas.eliminar']));
     $user->givePermissionTo(Permission::firstOrCreate(['name' => 'empresa.editar']));
 
@@ -179,6 +180,40 @@ it('uses proportional presets when selecting a rectangular orientation', functio
         ->set('orientation', 'vertical')
         ->assertSet('table_width', 130)
         ->assertSet('table_height', 280);
+});
+
+it('allows tables separated by the layout gap', function () {
+    $floor = RestaurantFloor::create(['name' => 'Salón principal', 'sort_order' => 1]);
+    $first = Table::create([
+        'restaurant_floor_id' => $floor->id,
+        'name' => 'Mesa izquierda',
+        'capacity' => 4,
+        'table_width' => 132,
+        'table_height' => 132,
+        'x_pos' => 20,
+        'y_pos' => 20,
+        'status' => 'libre',
+    ]);
+    $second = Table::create([
+        'restaurant_floor_id' => $floor->id,
+        'name' => 'Mesa derecha',
+        'capacity' => 4,
+        'table_width' => 132,
+        'table_height' => 132,
+        'x_pos' => 168,
+        'y_pos' => 20,
+        'status' => 'libre',
+    ]);
+
+    Livewire::actingAs(layoutAdmin())
+        ->test(TableComponent::class)
+        ->set('selectedFloorId', $floor->id)
+        ->call('savePositions', [
+            ['id' => $first->id, 'x' => 20, 'y' => 20],
+            ['id' => $second->id, 'x' => 168, 'y' => 20],
+        ]);
+
+    expect($second->refresh()->x_pos)->toBe(168);
 });
 
 it('distributes fixed-size chairs symmetrically along the longer table sides', function () {

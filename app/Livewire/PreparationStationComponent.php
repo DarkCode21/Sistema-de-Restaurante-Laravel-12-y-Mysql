@@ -22,11 +22,8 @@ class PreparationStationComponent extends Component
     public function render()
     {
         return view('livewire.preparation-station-component', [
-            'stations' => PreparationStation::with('users')->orderBy('name')->paginate(10),
-            'cooks' => User::query()
-                ->where(fn ($query) => $query->whereNull('type')->orWhere('type', '!=', 'client'))
-                ->orderBy('name')
-                ->get(),
+            'stations' => PreparationStation::with(['users' => fn ($users) => $this->scopeBranchUsers($users)])->orderBy('name')->paginate(10),
+            'cooks' => $this->branchUsers()->orderBy('name')->get(),
         ]);
     }
 
@@ -38,7 +35,7 @@ class PreparationStationComponent extends Component
 
     public function edit(int $stationId): void
     {
-        $station = PreparationStation::with('users')->findOrFail($stationId);
+        $station = PreparationStation::with(['users' => fn ($users) => $this->scopeBranchUsers($users)])->findOrFail($stationId);
         $this->station_id = $station->id;
         $this->name = $station->name;
         $this->printer_name = $station->printer_name ?? '';
@@ -54,6 +51,11 @@ class PreparationStationComponent extends Component
             'user_ids' => 'array',
             'user_ids.*' => 'exists:users,id',
         ]);
+
+        if ($this->branchUsers()->whereKey($this->user_ids)->count() !== count(array_unique($this->user_ids))) {
+            $this->addError('user_ids', 'Solo puedes asignar personal de la sede activa.');
+            return;
+        }
 
         $station = PreparationStation::updateOrCreate(
             ['id' => $this->station_id],
@@ -96,5 +98,17 @@ class PreparationStationComponent extends Component
     {
         $this->reset(['station_id', 'name', 'printer_name', 'user_ids']);
         $this->resetValidation();
+    }
+
+    private function branchUsers()
+    {
+        return $this->scopeBranchUsers(User::query());
+    }
+
+    private function scopeBranchUsers($users)
+    {
+        return $users
+            ->whereHas('branches', fn ($branches) => $branches->whereKey(session('branch_id')))
+            ->where(fn ($query) => $query->whereNull('type')->orWhere('type', '!=', 'client'));
     }
 }

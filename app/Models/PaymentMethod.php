@@ -21,4 +21,14 @@ class PaymentMethod extends Model
     {
         return $this->hasMany(Payment::class);
     }
+
+    public function tipPayouts(): HasMany
+    {
+        return $this->hasMany(TipPayout::class);
+    }
+
+    public function tipAdjustments(): HasMany
+    {
+        return $this->hasMany(TipAdjustment::class);
+    }
 }

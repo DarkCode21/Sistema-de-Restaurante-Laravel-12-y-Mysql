@@ -33,9 +33,11 @@ it('shows active products before inactive products in the administration catalog
     $inactiveProduct->forceFill(['created_at' => now(), 'updated_at' => now()])->saveQuietly();
 
     $view = app(ProductComponent::class)->render();
-    $names = collect($view->getData()['products']->items())->pluck('name')->all();
+    $products = $view->getData()['products']->items();
+    $names = collect($products)->pluck('name')->all();
 
-    expect($names)->toBe(['Parrilla activa', 'Producto inactivo reciente']);
+    expect($names)->toBe(['Parrilla activa', 'Producto inactivo reciente'])
+        ->and($products[0]->stock)->toBe(12);
 });
 
 it('shows waiter categories only when they have active products', function () {
@@ -69,4 +71,24 @@ it('shows waiter categories only when they have active products', function () {
 
     expect($categoryNames)->toContain('Parrillas activas')
         ->not->toContain('Carta antigua');
+});
+
+it('filters the catalog by category, price, stock, and availability', function () {
+    $drinks = Category::create(['name' => 'Bebidas filtradas']);
+    $grills = Category::create(['name' => 'Parrillas filtradas']);
+    Product::create(['category_id' => $drinks->id, 'name' => 'Chicha filtrada', 'price' => 8, 'stock' => 4, 'status' => true, 'image' => 'products/default.png', 'requires_kitchen' => false]);
+    Product::create(['category_id' => $grills->id, 'name' => 'Parrilla filtrada', 'price' => 30, 'stock' => 12, 'status' => true, 'image' => 'products/default.png', 'requires_kitchen' => true]);
+    Product::create(['category_id' => $drinks->id, 'name' => 'Bebida agotada', 'price' => 8, 'stock' => 4, 'status' => false, 'image' => 'products/default.png', 'requires_kitchen' => false]);
+
+    $component = app(ProductComponent::class);
+    $component->categoryFilter = 'Bebidas filtradas';
+    $component->priceMin = '8';
+    $component->priceMax = '8';
+    $component->stockMin = '4';
+    $component->stockMax = '4';
+    $component->availability = 'available';
+
+    $products = $component->render()->getData()['products']->items();
+
+    expect(collect($products)->pluck('name')->all())->toBe(['Chicha filtrada']);
 });

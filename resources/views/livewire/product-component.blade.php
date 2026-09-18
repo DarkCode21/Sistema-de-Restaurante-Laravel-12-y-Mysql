@@ -38,6 +38,24 @@
                 </div>
             </div>
 
+            <div class="grid gap-3 border-b border-slate-100 bg-slate-50/70 px-6 py-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                <div class="xl:col-span-2"><x-searchable-select model="categoryFilter" :options="$categories->pluck('name')" placeholder="Categoría" icon="fa-tags" /></div>
+                <input wire:model.live.debounce.200ms="priceMin" type="number" min="0" step="0.01" placeholder="Precio mín."
+                    class="w-full rounded-xl border-slate-200 bg-white py-2 text-sm focus:border-orange-500 focus:ring-orange-500/20">
+                <input wire:model.live.debounce.200ms="priceMax" type="number" min="0" step="0.01" placeholder="Precio máx."
+                    class="w-full rounded-xl border-slate-200 bg-white py-2 text-sm focus:border-orange-500 focus:ring-orange-500/20">
+                <input wire:model.live.debounce.200ms="stockMin" type="number" min="0" step="1" placeholder="Stock mín."
+                    class="w-full rounded-xl border-slate-200 bg-white py-2 text-sm focus:border-orange-500 focus:ring-orange-500/20">
+                <input wire:model.live.debounce.200ms="stockMax" type="number" min="0" step="1" placeholder="Stock máx."
+                    class="w-full rounded-xl border-slate-200 bg-white py-2 text-sm focus:border-orange-500 focus:ring-orange-500/20">
+                <select wire:model.live="availability" class="w-full rounded-xl border-slate-200 bg-white py-2 text-sm focus:border-orange-500 focus:ring-orange-500/20">
+                    <option value="">Todos los estados</option>
+                    <option value="available">En carta</option>
+                    <option value="unavailable">Agotados</option>
+                </select>
+                <button wire:click="clearFilters" type="button" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500 hover:border-orange-200 hover:text-orange-600">Limpiar</button>
+            </div>
+
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>

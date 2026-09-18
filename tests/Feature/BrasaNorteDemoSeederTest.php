@@ -29,7 +29,7 @@ test('it creates complete demos for two branches', function () {
     expect(Setting::withoutGlobalScopes()->where('company_id', $company->id)->value('company_name'))->toBe('Parrilla Brasa Norte')
         ->and(Role::where('company_id', $company->id)->count())->toBeGreaterThanOrEqual(4)
         ->and(Product::withoutGlobalScopes()->where('company_id', $company->id)->count())->toBeGreaterThan(20)
-        ->and((float) Product::withoutGlobalScopes()->where('company_id', $company->id)->where('name', 'Parrilla de Pollo - Pecho')->firstOrFail()->branchStocks()->withoutGlobalScopes()->where('branch_id', $branch->id)->value('price'))->toBe(26.4)
+        ->and((float) Product::withoutGlobalScopes()->where('company_id', $company->id)->where('name', 'Parrilla de Pollo - Pecho')->firstOrFail()->branchStocks()->withoutGlobalScopes()->where('branch_id', $branch->id)->value('price'))->toBe(24.0)
         ->and(Promotion::withoutGlobalScopes()->where('company_id', $company->id)->where('name', 'DEMO-BRASA-NORTE-Tarde 12%')->exists())->toBeTrue()
         ->and(Supplier::withoutGlobalScopes()->where('company_id', $company->id)->exists())->toBeTrue()
         ->and(User::where('email', 'mesero@brasanorte.demo.local')->firstOrFail()->companies()->whereKey($company)->exists())->toBeTrue();

@@ -181,11 +181,18 @@ function setupOfflineOrders(context) {
     synchronize();
 }
 
-document.addEventListener('submit', (event) => {
+document.addEventListener('submit', async (event) => {
     if (!event.target.matches('[data-clear-offline]')) return;
 
-    if ('indexedDB' in window) indexedDB.deleteDatabase(databaseName);
-    if ('caches' in window) caches.delete(cacheName);
+    event.preventDefault();
+    await Promise.all([
+        'indexedDB' in window ? new Promise((resolve) => {
+            const request = indexedDB.deleteDatabase(databaseName);
+            request.onsuccess = request.onerror = request.onblocked = resolve;
+        }) : Promise.resolve(),
+        'caches' in window ? caches.delete(cacheName) : Promise.resolve(),
+    ]);
+    event.target.submit();
 });
 
 if ('serviceWorker' in navigator) {

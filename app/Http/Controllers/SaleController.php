@@ -95,8 +95,10 @@ class SaleController extends Controller
         $query = Sale::with([
             'branch.company',
             'cashier',
+            'cashRegister' => fn ($query) => $query->withoutGlobalScopes()->with('branch.company'),
             'order' => fn ($query) => $query->withoutGlobalScopes(),
             'order.table' => fn ($query) => $query->withoutGlobalScopes(),
+            'order.table.branch.company',
             'order.user',
             'details.product' => fn ($query) => $query->withoutGlobalScopes(),
             'payments.method' => fn ($query) => $query->withoutGlobalScopes(),
@@ -106,17 +108,33 @@ class SaleController extends Controller
             $query->withoutGlobalScopes();
         }
 
-        return $query->findOrFail($id);
+        $sale = $query->findOrFail($id);
+
+        if (!$sale->branch) {
+            $branch = $sale->cashRegister?->branch ?? $sale->order?->table?->branch;
+            abort_unless($branch, 404);
+            $sale->setRelation('branch', $branch);
+        }
+
+        return $sale;
     }
 
     private function logoDataUri(Setting $setting): ?string
     {
-        if (!$setting->logo_path || !Storage::disk('public')->exists($setting->logo_path)) {
+        $disk = Storage::disk('public');
+
+        if (!$setting->logo_path || !$disk->exists($setting->logo_path)) {
             return null;
         }
 
-        return 'data:' . Storage::disk('public')->mimeType($setting->logo_path)
-            . ';base64,' . base64_encode(Storage::disk('public')->get($setting->logo_path));
+        $mime = $disk->mimeType($setting->logo_path);
+        $decoder = ['image/jpeg' => 'imagecreatefromjpeg', 'image/png' => 'imagecreatefrompng'][$mime] ?? null;
+
+        if (!$decoder || !function_exists($decoder)) {
+            return null;
+        }
+
+        return 'data:' . $mime . ';base64,' . base64_encode($disk->get($setting->logo_path));
     }
 
     private function receiptCompany(Sale $sale): Setting

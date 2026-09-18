@@ -151,19 +151,21 @@
                 </h3>
             </div>
 
-            <div class="ultra-card card-ticket p-6 rounded-2xl">
-                <div class="flex items-center justify-between mb-5">
-                    <div
-                        class="icon-container w-12 h-12 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-emerald-500/20 transition-all duration-300">
-                        <i class="fa-solid fa-receipt text-xl"></i>
+            @if ($empresa->tips_enabled ?? true)
+                <div class="ultra-card card-ticket p-6 rounded-2xl">
+                    <div class="flex items-center justify-between mb-5">
+                        <div
+                            class="icon-container w-12 h-12 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-emerald-500/20 transition-all duration-300">
+                            <i class="fa-solid fa-receipt text-xl"></i>
+                        </div>
                     </div>
+                    <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Total Propinas</p>
+                    <h3 class="text-2xl font-black text-slate-800 tracking-tight mt-1">
+                        <span
+                            class="text-emerald-600 font-bold mr-0.5">{{ $empresa->currency_simbol }}</span>{{ number_format($propinasHoy, 2) }}
+                    </h3>
                 </div>
-                <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Total Propinas</p>
-                <h3 class="text-2xl font-black text-slate-800 tracking-tight mt-1">
-                    <span
-                        class="text-emerald-600 font-bold mr-0.5">{{ $empresa->currency_simbol }}</span>{{ number_format($propinasHoy, 2) }}
-                </h3>
-            </div>
+            @endif
 
         </div>
 
@@ -438,10 +440,16 @@
                         <div
                             class="flex items-center justify-between group p-2.5 rounded-xl hover:bg-slate-50 transition-all duration-200 border border-transparent hover:border-slate-100">
                             <div class="flex items-center gap-3.5">
-                                <div
-                                    class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 border border-slate-300/50 flex items-center justify-center text-xs font-black text-slate-600 group-hover:from-orange-500 group-hover:to-orange-600 group-hover:text-white group-hover:shadow-md group-hover:shadow-orange-500/20 group-hover:border-transparent transition-all duration-300 uppercase tracking-tighter">
-                                    {{ mb_substr($item->product->name, 0, 2) }}
-                                </div>
+                                @if ($item->product->image)
+                                    <img src="{{ asset('storage/' . $item->product->image) }}"
+                                        alt="{{ $item->product->name }}"
+                                        class="w-10 h-10 rounded-xl border border-slate-300/50 object-cover">
+                                @else
+                                    <div
+                                        class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 border border-slate-300/50 flex items-center justify-center text-xs font-black text-slate-600 group-hover:from-orange-500 group-hover:to-orange-600 group-hover:text-white group-hover:shadow-md group-hover:shadow-orange-500/20 group-hover:border-transparent transition-all duration-300 uppercase tracking-tighter">
+                                        {{ mb_substr($item->product->name, 0, 2) }}
+                                    </div>
+                                @endif
                                 <div>
                                     <p
                                         class="text-xs font-bold text-slate-800 group-hover:text-orange-600 transition-colors">

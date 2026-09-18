@@ -177,7 +177,7 @@
                 <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
                     <div>
                         <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                            {{ $quickCheckout ? 'Cobrar y liberar mesa' : 'Panel de Cobro' }}
+                            {{ $quickCheckout ? 'Cobrar mesa' : 'Panel de Cobro' }}
                         </h2>
                         @if ($quickCheckout && $this->order?->table)
                             <p class="mt-1 text-xs font-black uppercase tracking-wide text-emerald-700">
@@ -300,18 +300,20 @@
                                 </div>
                             </div>
 
-                            <div>
-                                <label class="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">
-                                    Propina
-                                </label>
-                                <div class="flex items-center bg-white border border-slate-200 rounded-md px-2 py-2">
-                                    <span class="text-[10px] font-bold text-slate-400 mr-1">
-                                        {{ $empresa->currency_simbol }}
-                                    </span>
-                                    <input type="number" step="0.01" min="0" wire:model.live="tip"
-                                        class="w-full bg-transparent border-none p-0 text-sm font-black text-orange-600 focus:ring-0">
+                            @if ($tipsEnabled)
+                                <div>
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase mb-1.5 ml-1">
+                                        Propina
+                                    </label>
+                                    <div class="flex items-center bg-white border border-slate-200 rounded-md px-2 py-2">
+                                        <span class="text-[10px] font-bold text-slate-400 mr-1">
+                                            {{ $empresa->currency_simbol }}
+                                        </span>
+                                        <input type="number" step="0.01" min="0" wire:model.live="tip"
+                                            class="w-full bg-transparent border-none p-0 text-sm font-black text-orange-600 focus:ring-0">
+                                    </div>
                                 </div>
-                            </div>
+                            @endif
 
                         </div>
 
@@ -416,7 +418,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                     d="M5 13l4 4L19 7"></path>
                             </svg>
-                            {{ $quickCheckout ? 'Cobrar y liberar mesa' : 'Finalizar Operación' }}
+                            {{ $quickCheckout ? 'Cobrar mesa' : 'Finalizar Operación' }}
                         @endif
 
                     </button>

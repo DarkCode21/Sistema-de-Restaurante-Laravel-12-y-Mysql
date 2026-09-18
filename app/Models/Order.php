@@ -28,6 +28,11 @@ class Order extends Model
         return $this->belongsTo(Table::class);
     }
 
+    public function joinedTables()
+    {
+        return $this->belongsToMany(Table::class, 'order_table')->withTimestamps();
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class);
@@ -54,11 +59,9 @@ class Order extends Model
             return false;
         }
 
-        $details = $this->relationLoaded('details')
-            ? $this->details
-            : $this->details()->get();
-
-        $activeDetails = $details->where('cooking_status', '!=', 'cancelled');
+        $activeDetails = $this->details()
+            ->where('cooking_status', '!=', 'cancelled')
+            ->get();
 
         if ($activeDetails->isEmpty()) {
             return false;
@@ -79,6 +82,18 @@ class Order extends Model
         return $this->hasOne(Sale::class);
     }
 
+    public function releaseTables(): void
+    {
+        $tableIds = $this->joinedTables()
+            ->pluck('tables.id')
+            ->push($this->table_id)
+            ->filter()
+            ->unique();
+
+        Table::query()->whereKey($tableIds)->update(['status' => 'libre']);
+        $this->joinedTables()->detach();
+    }
+
     public function getOrderTypeLabelAttribute(): string
     {
         return match ($this->order_type) {
@@ -90,8 +105,17 @@ class Order extends Model
 
     public function getServiceLabelAttribute(): string
     {
-        return $this->order_type === 'dine_in'
-            ? ($this->getRelationValue('table')?->name ?? 'Mesa sin asignar')
-            : $this->order_type_label;
+        if ($this->order_type !== 'dine_in') {
+            return $this->order_type_label;
+        }
+
+        $tables = collect([$this->getRelationValue('table')])
+            ->filter()
+            ->merge($this->relationLoaded('joinedTables') ? $this->joinedTables : $this->joinedTables()->get())
+            ->pluck('name')
+            ->unique()
+            ->values();
+
+        return $tables->isEmpty() ? 'Mesa sin asignar' : $tables->join(' + ');
     }
 }

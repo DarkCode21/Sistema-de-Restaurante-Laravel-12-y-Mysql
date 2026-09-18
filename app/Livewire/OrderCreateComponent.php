@@ -92,6 +92,7 @@ class OrderCreateComponent extends Component
                 ? Order::with(['details.product.components', 'details.components.product'])
                     ->where('table_id', $this->table->id)
                     ->where('status', 'abierto')
+                    ->doesntHave('sale')
                     ->first()
                 : null;
         }
@@ -299,35 +300,28 @@ class OrderCreateComponent extends Component
 
     private function hasStockForOneMore(array $item, Product $product): bool
     {
-        if ($product->recipeIngredients()->exists()) {
-            return true;
-        }
-
         if ($item['detail_id']) {
-            return $this->productStock($product) > 0;
+            return $product->availableStock() > 0;
         }
 
         $draftQuantity = collect($this->cart)
             ->filter(fn ($cartItem) => (int) $cartItem['product_id'] === $product->id && !$cartItem['detail_id'])
             ->sum('quantity');
 
-        return $this->productStock($product) > $draftQuantity;
+        return $product->availableStock() > $draftQuantity;
     }
 
     private function hasStockForCombo(array $components): bool
     {
         foreach ($components as $component) {
-            $product = Product::availableInActiveBranch()->find($component['product_id']);
-            if ($product?->recipeIngredients()->exists()) {
-                continue;
-            }
+            $product = Product::query()->find($component['product_id']);
             $draftQuantity = collect($this->cart)
                 ->filter(fn ($item) => !$item['detail_id'] && ($item['is_combo'] ?? false))
                 ->sum(fn ($item) => collect($item['components'] ?? [])
                     ->where('product_id', $component['product_id'])
                     ->sum(fn ($draftComponent) => $draftComponent['quantity'] * $item['quantity']));
 
-            if (!$product || $this->productStock($product) < $draftQuantity + $component['quantity']) {
+            if (!$product || $product->availableStock() < $draftQuantity + $component['quantity']) {
                 return false;
             }
         }
@@ -338,32 +332,19 @@ class OrderCreateComponent extends Component
     private function hasStockForOneMoreCombo(array $item): bool
     {
         foreach ($item['components'] as $component) {
-            $product = Product::availableInActiveBranch()->find($component['product_id']);
-            if ($product?->recipeIngredients()->exists()) {
-                continue;
-            }
+            $product = Product::query()->find($component['product_id']);
             $draftQuantity = collect($this->cart)
                 ->filter(fn ($cartItem) => !$cartItem['detail_id'] && ($cartItem['is_combo'] ?? false))
                 ->sum(fn ($cartItem) => collect($cartItem['components'] ?? [])
                     ->where('product_id', $component['product_id'])
                     ->sum(fn ($draftComponent) => $draftComponent['quantity'] * $cartItem['quantity']));
 
-            if (!$product || $this->productStock($product) < $draftQuantity + $component['quantity']) {
+            if (!$product || $product->availableStock() < $draftQuantity + $component['quantity']) {
                 return false;
             }
         }
 
         return true;
-    }
-
-    private function usesRecipe(Product $product): bool
-    {
-        return $product->recipeIngredients()->exists();
-    }
-
-    private function productStock(Product $product): float
-    {
-        return (float) ($product->branchStocks()->value('stock') ?? 0);
     }
 
     private function consumeProductInventory(OrderDetail $detail, Product $product, int $quantity): void
@@ -416,6 +397,82 @@ class OrderCreateComponent extends Component
             $ingredient->increment('stock', $amount);
             $usage->update(['quantity' => (float) $usage->quantity - $amount]);
         }
+    }
+
+    private function trustedOptions(Product $product, array $selectedOptions): array
+    {
+        $submitted = collect($selectedOptions);
+        if ($submitted->contains(fn ($option) => !is_array($option) || !filter_var($option['value_id'] ?? null, FILTER_VALIDATE_INT))) {
+            throw new \RuntimeException('Una opción del producto no es válida.');
+        }
+
+        $valueIds = $submitted->pluck('value_id')->map(fn ($id) => (int) $id)->values();
+        if ($valueIds->unique()->count() !== $valueIds->count()) {
+            throw new \RuntimeException('Una opción no puede seleccionarse más de una vez.');
+        }
+
+        $options = [];
+        foreach ($product->optionGroups as $group) {
+            $values = $group->values->whereIn('id', $valueIds);
+            if ($values->count() > 1) {
+                throw new \RuntimeException("Solo puedes elegir una opción para {$group->name}.");
+            }
+
+            $value = $values->first();
+            if ($group->required && !$value) {
+                throw new \RuntimeException("Falta una opción obligatoria para {$product->name}.");
+            }
+
+            if ($value) {
+                $options[] = [
+                    'group' => $group->name,
+                    'value' => $value->name,
+                    'value_id' => $value->id,
+                    'price_adjustment' => (float) $value->price_adjustment,
+                ];
+            }
+        }
+
+        if (count($options) !== $valueIds->count()) {
+            throw new \RuntimeException('Una opción no pertenece al producto seleccionado.');
+        }
+
+        return $options;
+    }
+
+    private function trustedNewItem(Product $product, array $item, int $quantity): array
+    {
+        $selectedOptions = [];
+        $components = [];
+
+        if ($product->is_combo) {
+            $submittedComponents = collect($item['components'] ?? [])
+                ->filter(fn ($component) => is_array($component) && filter_var($component['product_id'] ?? null, FILTER_VALIDATE_INT))
+                ->keyBy(fn ($component) => (int) $component['product_id']);
+            $componentIds = $product->components->pluck('id')->map(fn ($id) => (int) $id)->sort()->values();
+
+            if ($submittedComponents->keys()->sort()->values()->all() !== $componentIds->all()) {
+                throw new \RuntimeException("Los componentes de {$product->name} no son válidos.");
+            }
+
+            foreach ($product->components as $component) {
+                $componentOptions = $this->trustedOptions($component, $submittedComponents[$component->id]['selected_options'] ?? []);
+                $selectedOptions = [...$selectedOptions, ...$componentOptions];
+                $components[] = [
+                    'product_id' => $component->id,
+                    'quantity' => $component->pivot->quantity,
+                    'selected_options' => $componentOptions,
+                    'preparation_station_id' => $component->preparation_station_id,
+                    'requires_kitchen' => $component->requires_kitchen,
+                ];
+            }
+        } else {
+            $selectedOptions = $this->trustedOptions($product, $item['selected_options'] ?? []);
+        }
+
+        $breakdown = $product->unitBreakdown($quantity, (float) collect($selectedOptions)->sum('price_adjustment'));
+
+        return [$breakdown, $selectedOptions, $components];
     }
 
     public function updatingSearch()
@@ -659,7 +716,7 @@ class OrderCreateComponent extends Component
 
             $this->cart[$cartKey]['quantity']++;
             $this->recalcCartLine($cartKey);
-        } elseif (($product->is_combo && !$this->hasStockForCombo($components)) || (!$product->is_combo && !$product->recipeIngredients()->exists() && $this->productStock($product) <= collect($this->cart)
+        } elseif (($product->is_combo && !$this->hasStockForCombo($components)) || (!$product->is_combo && $product->availableStock() <= collect($this->cart)
             ->filter(fn ($item) => (int) $item['product_id'] === $product->id && !$item['detail_id'])
             ->sum('quantity'))) {
             $this->dispatch('swal', [
@@ -878,6 +935,8 @@ class OrderCreateComponent extends Component
                             })
                             ->exists();
 
+                        $order->releaseTables();
+
                         if ($hasSentDetails) {
                             $order->update([
                                 'status' => 'cancelado',
@@ -888,7 +947,6 @@ class OrderCreateComponent extends Component
                             $order->delete();
                         }
 
-                        $order->table?->update(['status' => 'libre']);
                         $orderClosed = true;
                     } else {
                         $total = (float) $remainingDetails->sum('subtotal') + (float) $remainingDetails->sum('tax');
@@ -1058,8 +1116,8 @@ class OrderCreateComponent extends Component
                 return false;
             }
 
+            $order->releaseTables();
             $order->delete();
-            $order->table?->update(['status' => 'libre']);
 
             return true;
         });
@@ -1194,13 +1252,10 @@ class OrderCreateComponent extends Component
         }
 
         if (!in_array($this->orderType, Order::ORDER_TYPES, true)
-            || ($this->orderType === 'dine_in' && !$this->table)
-            || ($this->orderType === 'delivery' && (trim($this->customer_name) === '' || $this->customer_name === 'Consumidor Final' || trim($this->customer_phone) === '' || trim($this->delivery_address) === ''))) {
+            || ($this->orderType === 'dine_in' && !$this->table)) {
             $this->dispatch('swal', [
                 'title' => 'Faltan datos del pedido',
-                'text' => $this->orderType === 'delivery'
-                    ? 'Delivery requiere cliente, teléfono y dirección.'
-                    : 'El tipo de pedido no es válido.',
+                'text' => 'El tipo de pedido no es válido.',
                 'icon' => 'warning',
             ]);
             return;
@@ -1229,7 +1284,7 @@ class OrderCreateComponent extends Component
                         'customer_id' => $this->customer_id,
                         'customer_name' => $this->customer_name ?: 'Consumidor Final',
                         'customer_phone' => $this->customer_phone ?: null,
-                        'delivery_address' => $this->orderType === 'delivery' ? trim($this->delivery_address) : null,
+                        'delivery_address' => $this->orderType === 'delivery' ? trim($this->delivery_address) ?: null : null,
                     ]);
                 } else {
                     $order = Order::create([
@@ -1239,7 +1294,7 @@ class OrderCreateComponent extends Component
                         'order_type' => $this->orderType,
                         'customer_name' => $this->customer_name ?? 'Consumidor Final',
                         'customer_phone' => $this->customer_phone ?: null,
-                        'delivery_address' => $this->orderType === 'delivery' ? trim($this->delivery_address) : null,
+                        'delivery_address' => $this->orderType === 'delivery' ? trim($this->delivery_address) ?: null : null,
                         'status' => 'abierto',
                         'total' => 0,
                         'amount_pending' => 0,
@@ -1316,10 +1371,12 @@ class OrderCreateComponent extends Component
                         }
 
                         if ($wasSent && $difference > 0) {
-                            $unitDiscount = (float) ($item['unit_discount'] ?? 0);
+                            $unitDiscount = $detail->quantity > 0
+                                ? round((float) $detail->discount / $detail->quantity, 2)
+                                : 0.0;
                             $unitNet = (float) $detail->price - $unitDiscount;
                             $newSubtotal = round($unitNet * $difference, 2);
-                            $newTaxRate = (float) ($item['tax_rate'] ?? $detail->tax_rate);
+                            $newTaxRate = (float) $detail->tax_rate;
                             $newTax = round($newSubtotal * $newTaxRate / 100, 2);
                             $newDetail = $order->details()->create([
                                 'product_id' => $product->id,
@@ -1328,7 +1385,7 @@ class OrderCreateComponent extends Component
                                 'discount' => round($unitDiscount * $difference, 2),
                                 'tax_rate' => $newTaxRate,
                                 'tax' => $newTax,
-                                'promotion_id' => $item['promotion_id'] ?? $detail->promotion_id,
+                                'promotion_id' => $detail->promotion_id,
                                 'subtotal' => $newSubtotal,
                                 'notes' => $newNotes,
                                 'selected_options' => $detail->selected_options,
@@ -1349,8 +1406,10 @@ class OrderCreateComponent extends Component
 
                         $this->adjustDetailInventory($detail, $product, $difference);
 
-                        $unitDiscount = (float) ($item['unit_discount'] ?? ($detail->quantity > 0 ? round((float) $detail->discount / $detail->quantity, 2) : 0));
-                        $taxRate = (float) ($item['tax_rate'] ?? $detail->tax_rate);
+                        $unitDiscount = $detail->quantity > 0
+                            ? round((float) $detail->discount / $detail->quantity, 2)
+                            : 0.0;
+                        $taxRate = (float) $detail->tax_rate;
                         $unitNet = (float) $detail->price - $unitDiscount;
                         $newSubtotal = round($unitNet * $quantity, 2);
                         $newTax = round($newSubtotal * $taxRate / 100, 2);
@@ -1361,7 +1420,7 @@ class OrderCreateComponent extends Component
                             'discount' => round($unitDiscount * $quantity, 2),
                             'tax_rate' => $taxRate,
                             'tax' => $newTax,
-                            'promotion_id' => $item['promotion_id'] ?? $detail->promotion_id,
+                            'promotion_id' => $detail->promotion_id,
                             'subtotal' => $newSubtotal,
                             'notes' => $newNotes,
                         ]);
@@ -1373,7 +1432,12 @@ class OrderCreateComponent extends Component
                         continue;
                     }
 
-                    $product = Product::query()
+                    $product = Product::availableInActiveBranch()
+                        ->with([
+                            'optionGroups.values',
+                            'components.optionGroups.values',
+                            'activePromotion',
+                        ])
                         ->whereKey($item['product_id'])
                         ->lockForUpdate()
                         ->first();
@@ -1382,37 +1446,27 @@ class OrderCreateComponent extends Component
                         throw new \RuntimeException('Producto no encontrado.');
                     }
 
+                    [$breakdown, $selectedOptions, $components] = $this->trustedNewItem($product, $item, $quantity);
+
                     if ($product->is_combo) {
-                        $components = $item['components'] ?? [];
-
-                        if ($components === []) {
-                            throw new \RuntimeException("El combo {$product->name} no tiene componentes.");
-                        }
-
-                        $componentProducts = Product::query()
-                            ->whereIn('id', collect($components)->pluck('product_id')->sort())
-                            ->orderBy('id')
-                            ->lockForUpdate()
-                            ->get()
-                            ->keyBy('id');
                         $parent = $order->details()->create([
                             'product_id' => $product->id,
                             'quantity' => $quantity,
-                            'price' => $item['price'],
-                            'discount' => round((float) ($item['unit_discount'] ?? 0) * $quantity, 2),
-                            'tax_rate' => (float) ($item['tax_rate'] ?? 0),
-                            'tax' => (float) ($item['tax'] ?? 0),
-                            'promotion_id' => $item['promotion_id'] ?? null,
-                            'subtotal' => (float) ($item['subtotal'] ?? ($item['price'] * $quantity)),
+                            'price' => $breakdown['price'],
+                            'discount' => $breakdown['discount'],
+                            'tax_rate' => $breakdown['tax_rate'],
+                            'tax' => $breakdown['tax'],
+                            'promotion_id' => $breakdown['promotion_id'],
+                            'subtotal' => $breakdown['subtotal'],
                             'notes' => $notes ?: null,
-                            'selected_options' => $item['selected_options'] ?? [],
+                            'selected_options' => $selectedOptions,
                             'requires_kitchen' => false,
                             'cooking_status' => 'pending',
                             'is_printed' => false,
                         ]);
 
                         foreach ($components as $component) {
-                            $componentProduct = $componentProducts->get($component['product_id']);
+                            $componentProduct = $product->components->firstWhere('id', $component['product_id']);
                             $componentQuantity = (int) $component['quantity'] * $quantity;
 
                             if (!$componentProduct || $componentProduct->is_combo) {
@@ -1441,16 +1495,16 @@ class OrderCreateComponent extends Component
                     $detail = $order->details()->create([
                         'product_id' => $product->id,
                         'quantity' => $quantity,
-                        'price' => $item['price'],
-                        'discount' => round((float) ($item['unit_discount'] ?? 0) * $quantity, 2),
-                        'tax_rate' => (float) ($item['tax_rate'] ?? 0),
-                        'tax' => (float) ($item['tax'] ?? 0),
-                        'promotion_id' => $item['promotion_id'] ?? null,
-                        'subtotal' => (float) ($item['subtotal'] ?? ($item['price'] * $quantity)),
+                        'price' => $breakdown['price'],
+                        'discount' => $breakdown['discount'],
+                        'tax_rate' => $breakdown['tax_rate'],
+                        'tax' => $breakdown['tax'],
+                        'promotion_id' => $breakdown['promotion_id'],
+                        'subtotal' => $breakdown['subtotal'],
                         'notes' => $notes ?: null,
-                        'selected_options' => $item['selected_options'] ?? [],
-                        'preparation_station_id' => $item['preparation_station_id'] ?? $product->preparation_station_id,
-                        'requires_kitchen' => $item['requires_kitchen'],
+                        'selected_options' => $selectedOptions,
+                        'preparation_station_id' => $product->preparation_station_id,
+                        'requires_kitchen' => $product->requires_kitchen,
                         'cooking_status' => 'pending',
                         'is_printed' => false,
                     ]);
@@ -1593,10 +1647,18 @@ class OrderCreateComponent extends Component
             ->orderBy('name', 'asc')
             ->paginate(5, ['*'], 'pageCustomers');
 
-        $products = Product::availableInActiveBranch()->with(['optionGroups.values', 'activePromotion', 'branchStocks'])
+        $products = Product::availableInActiveBranch()->with([
+            'optionGroups.values',
+            'activePromotion',
+            'branchStocks',
+            'recipeIngredients.branchStocks',
+            'components.branchStocks',
+            'components.recipeIngredients.branchStocks',
+        ])
             ->when($this->category_id, fn($q) => $q->where('category_id', $this->category_id))
             ->when($this->search, fn($q) => $q->where('name', 'like', '%' . $this->search . '%'))
             ->paginate(12, ['*'], 'pageProducts');
+        $products->getCollection()->each(fn (Product $product) => $product->setAttribute('available_stock', $product->availableStock()));
 
         return view('livewire.order-create-component', compact('customers', 'products'));
     }

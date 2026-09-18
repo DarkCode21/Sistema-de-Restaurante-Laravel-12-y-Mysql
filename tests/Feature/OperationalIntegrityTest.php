@@ -3,6 +3,7 @@
 use App\Livewire\OrderCreateComponent;
 use App\Livewire\OrdersCashierComponent;
 use App\Livewire\OrdersIndexComponent;
+use App\Livewire\TableComponent;
 use App\Livewire\ExpenseComponent;
 use App\Livewire\CashRegisterComponent;
 use App\Models\CashRegister;
@@ -15,6 +16,7 @@ use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\Setting;
+use App\Models\TipAdjustment;
 use App\Models\Table;
 use App\Models\User;
 use Livewire\Livewire;
@@ -63,6 +65,14 @@ it('restores stock when a saved item is removed', function () {
         'image' => 'products/default.png',
     ]);
     [$table, $order] = makeOperationalOrder($user, $product, 'Mesa de inventario');
+    $joinedTable = Table::create([
+        'name' => 'Mesa unida de inventario',
+        'capacity' => 4,
+        'x_pos' => 120,
+        'y_pos' => 0,
+        'status' => 'ocupada',
+    ]);
+    $order->joinedTables()->attach($joinedTable);
 
     Livewire::actingAs($user)
         ->test(OrderCreateComponent::class, ['table' => $table])
@@ -71,7 +81,8 @@ it('restores stock when a saved item is removed', function () {
 
     expect((int) $product->refresh()->branchStocks()->value('stock'))->toBe(10)
         ->and(Order::find($order->id))->toBeNull()
-        ->and($table->refresh()->status)->toBe('libre');
+        ->and($table->refresh()->status)->toBe('libre')
+        ->and($joinedTable->refresh()->status)->toBe('libre');
 });
 
 it('rejects split-payment details from another order', function () {
@@ -138,6 +149,7 @@ it('records card payments in the cashier shift without changing physical cash', 
     expect($order->refresh()->status)->toBe('cerrado')
         ->and(Sale::where('order_id', $order->id)->count())->toBe(1)
         ->and(Sale::where('order_id', $order->id)->value('cash_register_id'))->toBe($cashRegister->id)
+        ->and(Sale::where('order_id', $order->id)->value('branch_id'))->toBe($cashRegister->branch_id)
         ->and((float) $cashRegister->refresh()->current_amount)->toBe(100.0)
         ->and(Sale::where('order_id', $order->id)->first()->payments->first()->received_amount)->toBeNull()
         ->and(Sale::where('order_id', $order->id)->first()->payments->first()->returned_amount)->toBeNull();
@@ -175,6 +187,7 @@ it('requires an open cashier shift for every payment method', function () {
 it('records a digital expense without assigning a cash register', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
     $user = User::factory()->create();
+    $user->givePermissionTo(Permission::findOrCreate('gastos.crear'));
     $yape = PaymentMethod::create(['name' => 'Yape', 'is_efectivo' => false]);
 
     Livewire::actingAs($user)
@@ -190,9 +203,11 @@ it('records a digital expense without assigning a cash register', function () {
         ->and((float) Expense::first()->amount)->toBe(30.0);
 });
 
-it('allows advance payment and closes the table after service', function () {
+it('keeps an advance-paid table occupied until the waiter releases it', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
     $user = User::factory()->create();
+    $user->givePermissionTo(Permission::findOrCreate('ordenes.cobrar'));
+    $user->givePermissionTo(Permission::findOrCreate('ordenes.crear'));
     $cashRegister = CashRegister::create([
         'name' => 'Caja de cocina',
         'opening_amount' => 100,
@@ -215,8 +230,11 @@ it('allows advance payment and closes the table after service', function () {
     [$table, $order, $detail] = makeOperationalOrder($user, $product, 'Mesa en cocina');
     $detail->update(['cooking_status' => 'in_progress', 'is_printed' => true]);
 
-    Livewire::actingAs($user)->test(OrdersCashierComponent::class)
-        ->call('openFullPayment', $order->id)
+    Livewire::actingAs($user)->test(OrdersIndexComponent::class)
+        ->assertSee('Cobrar adelantado');
+
+    Livewire::actingAs($user)->withQueryParams(['order' => $order->id])
+        ->test(OrdersCashierComponent::class)
         ->assertSet('showPaymentModal', true)
         ->set('boxId', $cashRegister->id)
         ->set('payments', [[
@@ -245,7 +263,53 @@ it('allows advance payment and closes the table after service', function () {
         ->call('markDetailAsServed', $detail->id);
 
     expect($order->refresh()->status)->toBe('cerrado')
-        ->and($table->refresh()->status)->toBe('libre');
+        ->and($table->refresh()->status)->toBe('ocupada');
+
+    Livewire::actingAs($user)->test(TableComponent::class)
+        ->call('releaseTable', $table->id);
+
+    expect($table->refresh()->status)->toBe('libre');
+});
+
+it('joins free tables to one order and releases them together', function () {
+    $user = User::factory()->create();
+    $user->givePermissionTo(Permission::findOrCreate('ordenes.crear'));
+    $category = Category::create(['name' => 'Compartidos']);
+    $product = Product::create([
+        'category_id' => $category->id,
+        'name' => 'Parrilla compartida',
+        'price' => 20,
+        'stock' => 9,
+        'status' => true,
+        'requires_kitchen' => false,
+        'image' => 'products/default.png',
+    ]);
+    [$mainTable, $order, $detail] = makeOperationalOrder($user, $product, 'Mesa principal');
+    $joinedTable = Table::create([
+        'name' => 'Mesa unida',
+        'capacity' => 4,
+        'x_pos' => 120,
+        'y_pos' => 0,
+        'status' => 'libre',
+    ]);
+
+    Livewire::actingAs($user)->test(TableComponent::class)
+        ->call('openJoinTables', $order->id)
+        ->set('joinedTableIds', [$joinedTable->id])
+        ->call('saveJoinedTables');
+
+    expect($order->joinedTables()->pluck('id')->all())->toBe([$joinedTable->id])
+        ->and($mainTable->refresh()->status)->toBe('ocupada')
+        ->and($joinedTable->refresh()->status)->toBe('ocupada');
+
+    $detail->update(['cooking_status' => 'cancelled']);
+
+    Livewire::actingAs($user)->test(TableComponent::class)
+        ->call('releaseTable', $joinedTable->id);
+
+    expect($order->joinedTables()->exists())->toBeFalse()
+        ->and($mainTable->refresh()->status)->toBe('libre')
+        ->and($joinedTable->refresh()->status)->toBe('libre');
 });
 
 it('requires a valid signature for printer endpoints', function () {
@@ -307,24 +371,37 @@ it('reconciles digital payments independently from physical cash at close', func
         ['payment_method_id' => $cash->id, 'amount' => 20],
         ['payment_method_id' => $yape->id, 'amount' => 30, 'reference' => 'YAPE-001'],
     ]);
+    $adjustment = new TipAdjustment([
+        'sale_id' => $sale->id,
+        'cash_register_id' => $cashRegister->id,
+        'payment_method_id' => $yape->id,
+        'adjusted_by' => $user->id,
+        'amount' => 5,
+        'reason' => 'Propina posterior por Yape',
+        'adjusted_at' => now(),
+    ]);
+    $adjustment->branch_id = $cashRegister->branch_id;
+    $adjustment->save();
 
     $this->actingAs($user)
         ->postJson(route('boxes.close', $cashRegister), [
             'counted_amount' => 119,
             'payment_closures' => [[
                 'payment_method_id' => $yape->id,
-                'counted_amount' => 28,
+                'counted_amount' => 33,
             ]],
         ])
         ->assertOk();
 
     expect((float) $cashRegister->refresh()->difference)->toBe(-1.0)
         ->and((float) $cashRegister->paymentClosures()->whereNull('payment_method_id')->value('expected_amount'))->toBe(120.0)
+        ->and((float) $cashRegister->paymentClosures()->where('payment_method_id', $yape->id)->value('expected_amount'))->toBe(35.0)
         ->and((float) $cashRegister->paymentClosures()->where('payment_method_id', $yape->id)->value('difference'))->toBe(-2.0);
 });
 
 it('allows only one open session per cash terminal', function () {
     $user = User::factory()->create();
+    $user->givePermissionTo(Permission::findOrCreate('cajas.crear'));
     $terminal = CashTerminal::create(['name' => 'Caja secundaria', 'is_active' => true]);
 
     Livewire::actingAs($user)
@@ -348,6 +425,7 @@ it('allows only one open session per cash terminal', function () {
 it('does not allow an expense to alter a closed cash register', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
     $user = User::factory()->create();
+    $user->givePermissionTo(Permission::findOrCreate('gastos.crear'));
     $cashRegister = CashRegister::create([
         'name' => 'Caja cerrada',
         'opening_amount' => 100,
@@ -377,6 +455,7 @@ it('does not allow an expense to alter a closed cash register', function () {
 it('does not allow editing a closed cash register', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
     $user = User::factory()->create();
+    $user->givePermissionTo(Permission::findOrCreate('cajas.editar'));
     $cashRegister = CashRegister::create([
         'name' => 'Caja histórica',
         'opening_amount' => 100,
@@ -402,6 +481,7 @@ it('does not allow editing a closed cash register', function () {
 it('does not allow one cashier to modify another cashiers turn', function () {
     $owner = User::factory()->create();
     $otherCashier = User::factory()->create();
+    $otherCashier->givePermissionTo(Permission::findOrCreate('cajas.editar'));
     $cashRegister = CashRegister::create([
         'name' => 'Turno protegido',
         'opening_amount' => 100,
@@ -424,6 +504,7 @@ it('does not allow one cashier to modify another cashiers turn', function () {
 it('does not allow changing the opening amount after a cash movement', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
     $user = User::factory()->create();
+    $user->givePermissionTo(Permission::findOrCreate('cajas.editar'));
     $cashRegister = CashRegister::create([
         'name' => 'Caja con gasto',
         'opening_amount' => 100,

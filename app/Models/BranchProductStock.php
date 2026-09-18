@@ -11,7 +11,7 @@ class BranchProductStock extends Model
     protected $fillable = ['product_id', 'stock', 'price', 'cost', 'is_available'];
 
     protected $casts = [
-        'stock' => 'decimal:3',
+        'stock' => 'integer',
         'price' => 'decimal:2',
         'cost' => 'decimal:4',
         'is_available' => 'boolean',

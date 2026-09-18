@@ -12,6 +12,10 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
+        if (app()->environment('production')) {
+            return;
+        }
+
         $company = Company::query()->firstOrFail();
         $branch = $company->branches()->firstOrFail();
         setPermissionsTeamId($company->id);
@@ -23,31 +27,38 @@ class UserSeeder extends Seeder
         ]);
 
         // Crear usuario admin
-        $admin = User::create([
+        $admin = User::firstOrCreate(['email' => 'admin@gmail.com'], [
             'name' => 'Administrador',
-            'email' => 'admin@gmail.com',
             'password' => Hash::make('admin123'),
+            'type' => 'user',
+            'email_verified_at' => now(),
         ]);
 
         $admin->assignRole($adminRole);
 
-        $waiter = User::create([
-            'name' => 'Mesero',
-            'email' => 'mesero@gmail.com',
-            'password' => Hash::make('mesero123'),
-        ]);
-        $userRole = Role::firstOrCreate([
+        $waiterRole = Role::firstOrCreate([
             'company_id' => $company->id,
             'name' => 'mesero',
             'guard_name' => 'web',
         ]);
-        $waiter->assignRole($userRole);
+        $waiters = collect([
+            ['email' => 'mesero@gmail.com', 'name' => 'Carlos Paredes', 'password' => 'mesero123'],
+            ['email' => 'mesera@gmail.com', 'name' => 'Lucía Torres', 'password' => 'mesera123'],
+            ['email' => 'mesero2@gmail.com', 'name' => 'Diego Ramos', 'password' => 'mesero2123'],
+        ])->map(fn (array $waiter) => User::firstOrCreate(['email' => $waiter['email']], [
+            'name' => $waiter['name'],
+            'password' => Hash::make($waiter['password']),
+            'type' => 'user',
+            'email_verified_at' => now(),
+        ]));
+        $waiters->each(fn (User $waiter) => $waiter->assignRole($waiterRole));
 
         //Cocinero
-        $cook = User::create([
+        $cook = User::firstOrCreate(['email' => 'cocinero@gmail.com'], [
             'name' => 'Cocinero',
-            'email' => 'cocinero@gmail.com',
             'password' => Hash::make('cocinero123'),
+            'type' => 'user',
+            'email_verified_at' => now(),
         ]);
         $userRole = Role::firstOrCreate([
             'company_id' => $company->id,
@@ -56,10 +67,11 @@ class UserSeeder extends Seeder
         ]);
         $cook->assignRole($userRole);
 
-        $cashier = User::create([
+        $cashier = User::firstOrCreate(['email' => 'cajero@gmail.com'], [
             'name' => 'Cajero',
-            'email' => 'cajero@gmail.com',
             'password' => Hash::make('cajero123'),
+            'type' => 'user',
+            'email_verified_at' => now(),
         ]);
         $userRole = Role::firstOrCreate([
             'company_id' => $company->id,
@@ -68,7 +80,7 @@ class UserSeeder extends Seeder
         ]);
         $cashier->assignRole($userRole);
 
-        foreach ([$admin, $waiter, $cook, $cashier] as $user) {
+        foreach ([$admin, ...$waiters->all(), $cook, $cashier] as $user) {
             $user->companies()->syncWithoutDetaching([$company->id]);
             $user->branches()->syncWithoutDetaching([$branch->id]);
         }

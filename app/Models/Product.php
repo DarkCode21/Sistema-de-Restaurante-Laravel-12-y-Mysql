@@ -131,6 +131,33 @@ class Product extends Model
         return $this->hasOne(Promotion::class)->current()->latest('id');
     }
 
+    public function availableStock(): int
+    {
+        $components = $this->relationLoaded('components') ? $this->components : $this->components()->get();
+        if ($this->is_combo) {
+            return $components->isEmpty()
+                ? 0
+                : max(0, (int) $components->map(fn (self $component) => floor($component->availableStock() / max(0.0001, (float) $component->pivot->quantity)))->min());
+        }
+
+        $ingredients = $this->relationLoaded('recipeIngredients') ? $this->recipeIngredients : $this->recipeIngredients()->get();
+        if ($ingredients->isNotEmpty()) {
+            return max(0, (int) $ingredients->map(function (Ingredient $ingredient): int {
+                $stock = $ingredient->relationLoaded('branchStocks')
+                    ? $ingredient->branchStocks->first()?->stock
+                    : $ingredient->branchStocks()->value('stock');
+
+                return (int) floor((float) $stock / max(0.0001, (float) $ingredient->pivot->quantity));
+            })->min());
+        }
+
+        $stock = $this->relationLoaded('branchStocks')
+            ? $this->branchStocks->first()?->stock
+            : $this->branchStocks()->value('stock');
+
+        return max(0, (int) floor((float) $stock));
+    }
+
     public function unitBreakdown(int $quantity, float $priceAdjustment = 0, ?Promotion $promotion = null): array
     {
         $unitPrice = round((float) $this->price + $priceAdjustment, 2);

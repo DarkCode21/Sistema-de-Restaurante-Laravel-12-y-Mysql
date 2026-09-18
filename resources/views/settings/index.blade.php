@@ -186,7 +186,7 @@
                                         <img id="logo-preview"
                                             src="{{ $setting->logo_path ? asset('storage/' . $setting->logo_path) : 'https://ui-avatars.com/api/?name=Logo' }}"
                                             class="max-h-full object-contain drop-shadow-sm">
-                                        <input type="file" name="logo_path"
+                                        <input type="file" name="logo_path" accept="image/jpeg,image/png,image/webp,image/svg+xml"
                                             onchange="previewImage(this, 'logo-preview')"
                                             class="absolute inset-0 opacity-0 cursor-pointer">
                                         <div
@@ -269,9 +269,9 @@
                                         <i class="fas fa-sliders"></i> Configuración operativa e impresión
                                     </label>
 
-                                    <div
-                                        class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                                        <div class="flex flex-col">
+                                     <div
+                                         class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                         <div class="flex flex-col">
                                             <span class="text-xs font-bold text-slate-700">Sonidos de alerta</span>
                                             <span class="text-[10px] text-slate-400 font-medium">Activa avisos para cocina, mozos y caja.</span>
                                         </div>
@@ -283,8 +283,24 @@
                                             <div
                                                 class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600">
                                             </div>
-                                        </label>
-                                    </div>
+                                         </label>
+                                     </div>
+
+                                     <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                         <div class="flex flex-col">
+                                             <span class="text-xs font-bold text-slate-700">Aceptar propinas</span>
+                                             <span class="text-[10px] text-slate-400 font-medium">Muestra el campo de propina al cobrar y el reporte por mozo.</span>
+                                         </div>
+
+                                         <input type="hidden" name="tips_enabled" value="0">
+                                         <label class="relative inline-flex items-center cursor-pointer select-none">
+                                             <input type="checkbox" name="tips_enabled" value="1"
+                                                 @checked(old('tips_enabled', $setting->tips_enabled ?? true)) class="sr-only peer">
+                                             <div
+                                                 class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600">
+                                             </div>
+                                         </label>
+                                     </div>
 
                                     <!-- IMPRESION DIRECTA -->
                                     <div

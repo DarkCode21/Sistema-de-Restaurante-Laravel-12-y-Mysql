@@ -110,6 +110,8 @@ class ExpenseComponent extends Component
 
     public function store()
     {
+        abort_unless(auth()->user()?->can($this->expense_id ? 'gastos.editar' : 'gastos.crear'), 403);
+
         $rules = [
             'cash_register_id'  => 'nullable|exists:cash_registers,id',
             'payment_method_id' => 'required|exists:payment_methods,id',
@@ -265,6 +267,8 @@ class ExpenseComponent extends Component
     #[On('delete-confirmed')]
     public function destroy($id)
     {
+        abort_unless(auth()->user()?->can('gastos.eliminar'), 403);
+
         try {
             DB::transaction(function () use ($id) {
                 $expense = Expense::query()

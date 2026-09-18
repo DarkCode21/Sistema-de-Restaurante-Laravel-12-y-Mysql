@@ -63,15 +63,21 @@
                             <div class="flex items-center justify-between">
                                 @php
                                     $breakdown = $product->unitBreakdown(1);
+                                    $stockClass = $product->available_stock <= 0 ? 'text-rose-600 bg-rose-50' : ($product->available_stock <= 5 ? 'text-amber-700 bg-amber-50' : 'text-emerald-700 bg-emerald-50');
                                 @endphp
                                 <span class="text-sm sm:text-base font-black text-slate-900">
                                     {{ $empresa->currency_simbol }}{{ number_format($breakdown['subtotal'], 2) }}
                                 </span>
-                                <button wire:click="addToOrder({{ $product->id }})"
-                                    class="bg-orange-600 text-white w-9 h-9 rounded-lg flex items-center justify-center hover:bg-orange-700 active:scale-90 transition-all"
-                                    aria-label="Añadir {{ $product->name }}">
-                                    +
-                                </button>
+                                <div class="flex items-center gap-2">
+                                    <span class="rounded-md px-1.5 py-1 text-[10px] font-black {{ $stockClass }}" title="Unidades disponibles">
+                                        <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i> {{ $product->available_stock }}
+                                    </span>
+                                    <button wire:click="addToOrder({{ $product->id }})" data-offline-product-id="{{ $product->id }}"
+                                        class="bg-orange-600 text-white w-9 h-9 rounded-lg flex items-center justify-center hover:bg-orange-700 active:scale-90 transition-all"
+                                        aria-label="Añadir {{ $product->name }}">
+                                        +
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -295,7 +301,7 @@
                                 <a href="{{ route('orders.cashier', ['order' => $order->id, 'quick_checkout' => 1]) }}"
                                     class="w-full px-5 py-3 bg-emerald-600 text-white text-xs font-black uppercase tracking-widest rounded-lg hover:bg-emerald-700 shadow-md shadow-emerald-100 active:scale-95 transition-all flex items-center justify-center gap-2">
                                     <i class="fa-solid fa-cash-register text-sm"></i>
-                                    {{ $orderType === 'dine_in' ? 'Cobrar y liberar mesa' : 'Cobrar pedido' }}
+                                    {{ $orderType === 'dine_in' ? 'Cobrar mesa' : 'Cobrar pedido' }}
                                 </a>
                             @endif
                         @endcan
@@ -507,64 +513,6 @@
         </div>
     </div>
 
-    <!-- Modal -->
-    <div id="printModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 p-4 sm:p-6">
-
-        <div class="bg-white w-full max-w-7xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-
-            <div class="flex items-center justify-between border-b px-6 py-4 shrink-0">
-                <h2 class="text-lg font-semibold text-gray-800">
-                    Vista previa de impresión
-                </h2>
-                <button onclick="cerrarModalImpresion()"
-                    class="text-gray-500 hover:text-red-500 text-2xl leading-none transition-colors">
-                    &times;
-                </button>
-            </div>
-
-            <div class="overflow-y-auto p-4 bg-gray-100 flex-1">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-                    @if ($separate_orders)
-                        <div class="bg-white rounded-xl shadow overflow-hidden flex flex-col">
-                            <div class="px-4 py-2 border-b font-semibold text-gray-700 bg-gray-50">
-                                Cocina
-                            </div>
-                            <iframe id="printFrameKitchen" src=""
-                                class="w-full h-[40vh] lg:h-[60vh] border-0">
-                            </iframe>
-                        </div>
-
-                        <div class="bg-white rounded-xl shadow overflow-hidden flex flex-col">
-                            <div class="px-4 py-2 border-b font-semibold text-gray-700 bg-gray-50">
-                                Bar
-                            </div>
-                            <iframe id="printFrameBar" src="" class="w-full h-[40vh] lg:h-[60vh] border-0">
-                            </iframe>
-                        </div>
-                    @else
-                        <div class="bg-white rounded-xl shadow overflow-hidden flex flex-col lg:col-span-2">
-                            <div class="px-4 py-2 border-b font-semibold text-gray-700 bg-gray-50">
-                                Todo
-                            </div>
-                            <iframe id="printFrame" src="" class="w-full h-[40vh] lg:h-[60vh] border-0">
-                            </iframe>
-                        </div>
-                    @endif
-
-                </div>
-            </div>
-
-            <div class="flex justify-end gap-3 border-t px-6 py-4 shrink-0 bg-white">
-                <button onclick="cerrarModalImpresion()"
-                    class="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium transition">
-                    Cerrar
-                </button>
-            </div>
-
-        </div>
-    </div>
-
 </div>
 
 
@@ -604,44 +552,16 @@
 
         window.__orderPrintingListenerRegistered = true;
         Livewire.on('auto-print-kitchen', async (printers) => {
-
-            let kitchenUrl = '';
-            let barUrl = '';
-
+            @if ($direct_printing)
             for (const printerData of printers[0]) {
+                await printKitchenTicket(
+                    printerData.url,
+                    printerData.printer_name
+                );
 
-                let finalUrl = printerData.url;
-
-                // SIN impresión directa
-                @if (!$direct_printing)
-
-                    @if ($separate_orders)
-
-                        if (printerData.requires_kitchen) {
-                            kitchenUrl = finalUrl;
-                        } else {
-                            barUrl = finalUrl;
-                        }
-                    @else
-
-                        kitchenUrl = finalUrl;
-                    @endif
-                @else
-
-                    await printKitchenTicket(
-                        finalUrl,
-                        printerData.printer_name
-                    );
-
-                    await delay(2000);
-                @endif
+                await delay(2000);
             }
-
-            // ABRIR SOLO UNA VEZ
-            @if (!$direct_printing)
-                abrirModalImpresion(kitchenUrl, barUrl);
             @endif
-
         });
     };
 

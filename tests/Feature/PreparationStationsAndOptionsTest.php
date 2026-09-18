@@ -3,6 +3,7 @@
 use App\Livewire\OrderCreateComponent;
 use App\Livewire\OrdersCashierComponent;
 use App\Livewire\OrdersChefComponent;
+use App\Livewire\PreparationStationComponent;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderDetail;
@@ -12,6 +13,39 @@ use App\Models\Setting;
 use App\Models\Table;
 use App\Models\User;
 use Livewire\Livewire;
+
+it('keeps a station screen-only until a printer is configured', function () {
+    Setting::create(['company_name' => 'Asador de prueba', 'direct_printing' => true]);
+    $user = User::factory()->create();
+    $station = PreparationStation::create(['name' => 'Frituras']);
+    $category = Category::create(['name' => 'Entradas']);
+    $product = Product::create([
+        'category_id' => $category->id,
+        'preparation_station_id' => $station->id,
+        'name' => 'Yuca frita',
+        'price' => 12,
+        'stock' => 2,
+        'status' => true,
+        'requires_kitchen' => true,
+        'image' => 'products/default.png',
+    ]);
+    $table = Table::create(['name' => 'Mesa impresora', 'capacity' => 2, 'status' => 'libre']);
+
+    $waiter = Livewire::actingAs($user)
+        ->test(OrderCreateComponent::class, ['table' => $table])
+        ->call('addToOrder', $product->id)
+        ->call('saveOrderTransaction')
+        ->assertNotDispatched('print-job');
+
+    Livewire::actingAs($user)
+        ->test(PreparationStationComponent::class)
+        ->call('edit', $station->id)
+        ->set('printer_name', 'Frituras-80mm')
+        ->call('store');
+
+    $waiter->call('saveOrderTransaction')
+        ->assertDispatched('print-job');
+});
 
 it('records selected product options with their price and preparation station', function () {
     Setting::create(['company_name' => 'Asador de prueba']);
@@ -242,8 +276,8 @@ it('splits a configurable combo into components for their preparation stations',
         ->and($components->get($chicken->id)->selected_options[0]['value'])->toBe('Bien cocido')
         ->and($components->get($potato->id)->preparation_station_id)->toBe($kitchen->id)
         ->and($components->get($potato->id)->selected_options[0]['value'])->toBe('Frita')
-        ->and($chicken->refresh()->stock)->toBe(4)
-        ->and($potato->refresh()->stock)->toBe(4);
+        ->and((float) $chicken->refresh()->branchStocks()->value('stock'))->toBe(4.0)
+        ->and((float) $potato->refresh()->branchStocks()->value('stock'))->toBe(4.0);
 
     OrderDetail::where('parent_detail_id', $parent->id)->delete();
 

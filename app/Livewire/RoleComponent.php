@@ -35,7 +35,8 @@ class RoleComponent extends Component
 
     public function render()
     {
-        $roles = Role::where('name', 'like', '%' . $this->search . '%')
+        $roles = Role::where('company_id', session('company_id'))
+            ->where('name', 'like', '%' . $this->search . '%')
             ->latest()
             ->paginate(10);
 
@@ -75,19 +76,24 @@ class RoleComponent extends Component
 
     public function store()
     {
+        abort_unless(auth()->user()?->can('roles.editar'), 403);
+
         $this->validate([
             'name' => [
                 'required',
                 'min:3',
-                Rule::unique('roles', 'name')->ignore($this->role_id),
+                Rule::unique('roles', 'name')->where('company_id', session('company_id'))->ignore($this->role_id),
             ],
             'selectedPermissions' => 'array',
         ]);
 
-        $role = Role::updateOrCreate(
-            ['id' => $this->role_id],
-            ['name' => $this->name, 'guard_name' => 'web']
-        );
+        $role = Role::query()
+            ->where('company_id', session('company_id'))
+            ->when($this->role_id, fn ($query) => $query->whereKey($this->role_id))
+            ->first() ?? new Role();
+        $role->name = $this->name;
+        $role->guard_name = 'web';
+        $role->save();
 
         $role->syncPermissions($this->selectedPermissions);
 
@@ -103,7 +109,7 @@ class RoleComponent extends Component
 
     public function edit($id)
     {
-        $role = Role::findOrFail($id);
+        $role = Role::where('company_id', session('company_id'))->findOrFail($id);
 
         $this->role_id = $role->id;
         $this->name = $role->name;
@@ -120,7 +126,9 @@ class RoleComponent extends Component
     #[On('delete-confirmed')]
     public function destroy($id)
     {
-        Role::findOrFail($id)->delete();
+        abort_unless(auth()->user()?->can('roles.editar'), 403);
+
+        Role::where('company_id', session('company_id'))->findOrFail($id)->delete();
 
         $this->dispatch('swal', [
             'title' => 'Eliminado',

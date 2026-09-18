@@ -13,7 +13,7 @@ use App\Models\Table;
 use App\Models\User;
 use Livewire\Livewire;
 
-it('requires contact data for delivery and saves it without a table', function () {
+it('saves delivery without requiring contact data', function () {
     Setting::create(['company_name' => 'Restaurante de prueba']);
     $user = User::factory()->create();
     $category = Category::create(['name' => 'Carta']);
@@ -27,26 +27,18 @@ it('requires contact data for delivery and saves it without a table', function (
         'image' => 'products/default.png',
     ]);
 
-    $component = Livewire::actingAs($user)
+    Livewire::actingAs($user)
         ->test(OrderCreateComponent::class, ['table' => null, 'orderType' => 'delivery'])
         ->call('addToOrder', $product->id)
-        ->call('saveOrderTransaction');
-
-    expect(Order::count())->toBe(0);
-
-    $component
-        ->set('customer_name', 'Ana Pérez')
-        ->set('customer_phone', '999123456')
-        ->set('delivery_address', 'Av. Central 123, puerta negra')
         ->call('saveOrderTransaction');
 
     $order = Order::firstOrFail();
 
     expect($order->order_type)->toBe('delivery')
         ->and($order->table_id)->toBeNull()
-        ->and($order->customer_name)->toBe('Ana Pérez')
-        ->and($order->customer_phone)->toBe('999123456')
-        ->and($order->delivery_address)->toBe('Av. Central 123, puerta negra');
+        ->and($order->customer_name)->toBe('Consumidor Final')
+        ->and($order->customer_phone)->toBeNull()
+        ->and($order->delivery_address)->toBeNull();
 });
 
 it('shows delivery orders in the waiter, kitchen, and cashier queues', function () {

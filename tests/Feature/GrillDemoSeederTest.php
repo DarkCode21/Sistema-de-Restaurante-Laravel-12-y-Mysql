@@ -2,6 +2,7 @@
 
 use App\Models\Category;
 use App\Models\CashRegister;
+use App\Models\Company;
 use App\Models\Expense;
 use App\Models\Ingredient;
 use App\Models\Order;
@@ -29,6 +30,7 @@ it('creates a complete parrilleria demo while disabling the legacy menu', functi
     ]);
 
     $this->seed(GrillDemoSeeder::class);
+    $this->seed(GrillDemoSeeder::class);
 
     $chickenCombo = Product::with('components')->where('name', 'Parrilla de Pollo - Pierna')->firstOrFail();
     $potatoDetail = OrderDetail::whereHas('product', fn ($query) => $query->where('name', 'Papas a elección'))
@@ -37,6 +39,12 @@ it('creates a complete parrilleria demo while disabling the legacy menu', functi
     $splitSale = Sale::where('customer_name', 'Pago mixto Yape y efectivo')
         ->whereHas('order', fn ($query) => $query->where('customer_phone', 'like', 'DEMO-GRILL-%'))
         ->firstOrFail();
+    $demoOrders = Order::with('user')->where('customer_phone', 'like', 'DEMO-GRILL-%')->get();
+    $salesWaiters = Sale::with('order.user')
+        ->whereHas('order', fn ($query) => $query->where('customer_phone', 'like', 'DEMO-GRILL-%'))
+        ->get()
+        ->pluck('order.user.name')
+        ->unique();
 
     expect($legacyProduct->fresh()->status)->toEqual(0)
         ->and(Product::where('name', 'Parrilla de Pollo - Pecho')->where('status', true)->exists())->toBeTrue()
@@ -54,6 +62,8 @@ it('creates a complete parrilleria demo while disabling the legacy menu', functi
         ->and(Table::count())->toBeGreaterThanOrEqual(8)
         ->and(Table::where('status', 'ocupada')->count())->toBeGreaterThan(0)
         ->and(Order::where('status', 'abierto')->count())->toBeGreaterThan(0)
+        ->and($demoOrders->pluck('user.name')->unique())->toHaveCount(3)
+        ->and($salesWaiters)->toHaveCount(3)
         ->and(OrderDetail::whereNotNull('parent_detail_id')->where('cooking_status', 'in_progress')->count())->toBeGreaterThan(0)
         ->and(Sale::whereHas('order', fn ($query) => $query->where('customer_phone', 'like', 'DEMO-GRILL-%'))->count())->toBe(24)
         ->and(SaleDetail::count())->toBeGreaterThanOrEqual(16)
@@ -69,6 +79,7 @@ it('creates a complete parrilleria demo while disabling the legacy menu', functi
         ->and(Expense::where('concept', 'like', 'DEMO-GRILL-%')->count())->toBe(2)
         ->and(Purchase::where('reference', 'DEMO-GRILL-COMPRA-001')->exists())->toBeTrue()
         ->and(Promotion::where('name', 'DEMO-GRILL-Almuerzo 15%')->exists())->toBeTrue()
+        ->and(Company::firstOrFail()->users()->where('email', 'parrillero@demo.local')->exists())->toBeTrue()
         ->and(CashRegister::where('status', 'open')->where('notes', 'DEMO-GRILL-TURNO-ACTUAL')->exists())->toBeTrue()
         ->and(CashRegister::where('status', 'closed')->whereHas('paymentClosures')->exists())->toBeTrue();
 });

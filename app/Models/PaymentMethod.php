@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class PaymentMethod extends Model
 {
     use SoftDeletes;
+    use \App\Models\Concerns\HasActiveCompany;
 
     protected $fillable = ['name', 'is_efectivo'];
 
@@ -19,5 +20,15 @@ class PaymentMethod extends Model
     public function payments()
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function tipPayouts(): HasMany
+    {
+        return $this->hasMany(TipPayout::class);
+    }
+
+    public function tipAdjustments(): HasMany
+    {
+        return $this->hasMany(TipAdjustment::class);
     }
 }

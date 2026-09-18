@@ -6,7 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class PreparationStation extends Model
 {
-    protected $fillable = ['name'];
+    use \App\Models\Concerns\HasActiveBranch;
+    protected $fillable = ['name', 'printer_name'];
 
     public function products()
     {

@@ -38,8 +38,8 @@ it('updates ingredient stock and weighted average cost from a purchase', functio
         ]])
         ->call('store');
 
-    expect((float) $ingredient->refresh()->stock)->toBe(15.0)
-        ->and((float) $ingredient->unit_cost)->toBe(2.6667)
+    expect((float) $ingredient->refresh()->branchStocks()->value('stock'))->toBe(15.0)
+        ->and((float) $ingredient->branchStocks()->value('unit_cost'))->toBe(2.6667)
         ->and($supplier->purchases()->first()->total)->toEqual('20.00');
 });
 
@@ -139,5 +139,53 @@ it('preserves recipe cost on sale and exposes it in the profit report', function
     $this->actingAs($user)
         ->get(route('reports.profit'))
         ->assertOk()
-        ->assertViewHas('totals', fn (array $totals) => (float) $totals['gross_profit'] === 18.0);
+        ->assertViewHas('totals', fn (array $totals) => (float) $totals['gross_profit'] === 18.0)
+        ->assertViewHas('products', fn ($products) => $products->perPage() === 15);
+
+    $this->actingAs($user)
+        ->get(route('reports.profit', ['category_id' => $category->id, 'product' => 'Plato rentable', 'print' => 1]))
+        ->assertOk()
+        ->assertViewIs('reports.profit-print')
+        ->assertSee('Plato rentable');
+});
+
+it('sums the historical costs of every combo component on sale', function () {
+    Setting::create(['company_name' => 'Restaurante de prueba']);
+    $user = User::factory()->create();
+    $cashRegister = CashRegister::create([
+        'name' => 'Turno combo',
+        'opening_amount' => 0,
+        'current_amount' => 0,
+        'status' => 'open',
+        'opened_by' => $user->id,
+        'opened_at' => now(),
+    ]);
+    $card = PaymentMethod::create(['name' => 'Tarjeta', 'is_efectivo' => false]);
+    $category = Category::create(['name' => 'Carta de combos']);
+    $firstIngredient = Ingredient::create(['name' => 'Insumo de combo uno', 'unit' => 'kg', 'stock' => 10, 'minimum_stock' => 1, 'unit_cost' => 4]);
+    $secondIngredient = Ingredient::create(['name' => 'Insumo de combo dos', 'unit' => 'kg', 'stock' => 10, 'minimum_stock' => 1, 'unit_cost' => 3]);
+    $firstComponent = Product::create(['category_id' => $category->id, 'name' => 'Componente uno', 'price' => 0, 'stock' => 0, 'status' => false, 'requires_kitchen' => false, 'image' => 'products/default.png']);
+    $secondComponent = Product::create(['category_id' => $category->id, 'name' => 'Componente dos', 'price' => 0, 'stock' => 0, 'status' => false, 'requires_kitchen' => false, 'image' => 'products/default.png']);
+    $firstComponent->recipeIngredients()->attach($firstIngredient->id, ['quantity' => 0.500]);
+    $secondComponent->recipeIngredients()->attach($secondIngredient->id, ['quantity' => 1]);
+    $combo = Product::create(['category_id' => $category->id, 'name' => 'Combo rentable', 'price' => 20, 'stock' => 0, 'status' => true, 'is_combo' => true, 'requires_kitchen' => false, 'image' => 'products/default.png']);
+    $combo->components()->attach([$firstComponent->id => ['quantity' => 1], $secondComponent->id => ['quantity' => 2]]);
+    $order = Order::create(['user_id' => $user->id, 'status' => 'abierto', 'total' => 40, 'amount_pending' => 40]);
+    $parent = OrderDetail::create(['order_id' => $order->id, 'product_id' => $combo->id, 'quantity' => 2, 'price' => 20, 'subtotal' => 40, 'requires_kitchen' => false, 'cooking_status' => 'served']);
+    $firstDetail = OrderDetail::create(['order_id' => $order->id, 'parent_detail_id' => $parent->id, 'product_id' => $firstComponent->id, 'quantity' => 2, 'price' => 0, 'subtotal' => 0, 'requires_kitchen' => false, 'cooking_status' => 'served']);
+    $secondDetail = OrderDetail::create(['order_id' => $order->id, 'parent_detail_id' => $parent->id, 'product_id' => $secondComponent->id, 'quantity' => 4, 'price' => 0, 'subtotal' => 0, 'requires_kitchen' => false, 'cooking_status' => 'served']);
+    $firstDetail->ingredientUsages()->create(['ingredient_id' => $firstIngredient->id, 'quantity' => 1, 'unit_cost' => 4]);
+    $secondDetail->ingredientUsages()->create(['ingredient_id' => $secondIngredient->id, 'quantity' => 4, 'unit_cost' => 3]);
+
+    Livewire::actingAs($user)->test(OrdersCashierComponent::class)
+        ->call('openFullPayment', $order->id)
+        ->set('boxId', $cashRegister->id)
+        ->set('payments', [['method_id' => $card->id, 'amount' => 40, 'reference' => 'VISA-COMBO']])
+        ->call('processPayment');
+
+    $saleDetail = Sale::where('order_id', $order->id)->firstOrFail()->details()->firstOrFail();
+
+    expect((float) $saleDetail->cost_total)->toBe(16.0)
+        ->and((float) $saleDetail->unit_cost)->toBe(8.0)
+        ->and((float) $saleDetail->gross_profit)->toBe(24.0);
 });

@@ -36,6 +36,12 @@ class ProductComponent extends Component
     public $image, $old_image;
 
     public $search = '';
+    public string $categoryFilter = '';
+    public string $priceMin = '';
+    public string $priceMax = '';
+    public string $stockMin = '';
+    public string $stockMax = '';
+    public string $availability = '';
     public $isOpen = false;
 
     public function updatingSearch()
@@ -43,13 +49,33 @@ class ProductComponent extends Component
         $this->resetPage();
     }
 
+    public function updatingCategoryFilter() { $this->resetPage(); }
+    public function updatingPriceMin() { $this->resetPage(); }
+    public function updatingPriceMax() { $this->resetPage(); }
+    public function updatingStockMin() { $this->resetPage(); }
+    public function updatingStockMax() { $this->resetPage(); }
+    public function updatingAvailability() { $this->resetPage(); }
+
+    public function clearFilters(): void
+    {
+        $this->reset(['search', 'categoryFilter', 'priceMin', 'priceMax', 'stockMin', 'stockMax', 'availability']);
+        $this->resetPage();
+    }
+
     public function render()
     {
-        $products = Product::with('category')->withCount('recipeIngredients')
+        $products = Product::with(['category', 'branchStocks'])->withCount('recipeIngredients')
             ->where('name', 'like', '%' . $this->search . '%')
+            ->when($this->categoryFilter, fn ($query) => $query->whereHas('category', fn ($category) => $category->where('name', 'like', '%' . $this->categoryFilter . '%')))
+            ->when(is_numeric($this->priceMin), fn ($query) => $query->whereHas('branchStocks', fn ($stock) => $stock->where('price', '>=', (float) $this->priceMin)))
+            ->when(is_numeric($this->priceMax), fn ($query) => $query->whereHas('branchStocks', fn ($stock) => $stock->where('price', '<=', (float) $this->priceMax)))
+            ->when(is_numeric($this->stockMin), fn ($query) => $query->whereHas('branchStocks', fn ($stock) => $stock->where('stock', '>=', (int) $this->stockMin)))
+            ->when(is_numeric($this->stockMax), fn ($query) => $query->whereHas('branchStocks', fn ($stock) => $stock->where('stock', '<=', (int) $this->stockMax)))
+            ->when($this->availability !== '', fn ($query) => $query->whereHas('branchStocks', fn ($stock) => $stock->where('is_available', $this->availability === 'available')))
             ->orderByDesc('status')
             ->latest()
             ->paginate(10);
+        $products->getCollection()->each(fn (Product $product) => $product->setAttribute('stock', $product->branchStocks->first()?->stock ?? $product->getRawOriginal('stock') ?? 0));
 
         $categories = Category::orderBy('name', 'asc')->get();
         $stations = PreparationStation::orderBy('name')->get();
@@ -58,7 +84,8 @@ class ProductComponent extends Component
             ->when($this->product_id, fn ($query) => $query->whereKeyNot($this->product_id))
             ->orderBy('name')
             ->get(['id', 'name', 'preparation_station_id']);
-        $ingredients = Ingredient::orderBy('name')->get(['id', 'name', 'unit', 'stock']);
+        $ingredients = Ingredient::with('branchStocks')->orderBy('name')->get(['id', 'name', 'unit']);
+        $ingredients->each(fn (Ingredient $ingredient) => $ingredient->setAttribute('stock', $ingredient->branchStocks->first()?->stock ?? 0));
 
         return view('livewire.product-component', compact('products', 'categories', 'stations', 'componentProducts', 'ingredients'));
     }
@@ -89,9 +116,11 @@ class ProductComponent extends Component
 
     public function store()
     {
+        abort_unless(auth()->user()?->can($this->product_id ? 'productos.editar' : 'productos.crear'), 403);
+
         $rules = [
             'category_id' => 'required|exists:categories,id',
-            'name' => ['required', 'min:2', Rule::unique('products', 'name')->ignore($this->product_id)],
+            'name' => ['required', 'min:2', Rule::unique('products', 'name')->where('company_id', session('company_id'))->ignore($this->product_id)],
             'price' => 'required|numeric',
             'cost' => 'nullable|numeric|min:0',
             'tax_rate' => 'required|numeric|min:0|max:100',
@@ -112,7 +141,7 @@ class ProductComponent extends Component
             'option_groups.*.values' => 'required_unless:is_combo,1|array|min:1',
             'option_groups.*.values.*.name' => 'required_unless:is_combo,1|string|max:100',
             'option_groups.*.values.*.price_adjustment' => 'required_unless:is_combo,1|numeric',
-            'image' => $this->product_id ? 'nullable|image|max:2048' : 'required|image|max:2048',
+            'image' => $this->product_id ? 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048' : 'required|image|mimes:jpeg,png,jpg,webp|max:2048',
         ];
 
         $this->validate($rules);
@@ -123,14 +152,11 @@ class ProductComponent extends Component
             return;
         }
 
+        $branchCost = $this->is_combo || $this->cost === '' ? null : $this->cost;
         $data = [
             'category_id' => $this->category_id,
             'name'        => $this->name,
-            'price'       => $this->price,
-            'cost'        => $this->is_combo || $this->cost === '' ? null : $this->cost,
             'tax_rate'    => $this->tax_rate,
-            'stock'       => $this->is_combo ? 0 : $this->stock,
-            'status'      => $this->status,
             'is_combo' => $this->is_combo,
             'requires_kitchen' => $this->is_combo ? false : $this->requires_kitchen,
             'preparation_station_id' => $this->is_combo || !$this->requires_kitchen ? null : $this->preparation_station_id,
@@ -144,8 +170,23 @@ class ProductComponent extends Component
             $data['image'] = $this->image->store('products', 'public');
         }
 
-        DB::transaction(function () use ($data) {
+        if (!$this->product_id) {
+            $data += [
+                'price' => $this->price,
+                'cost' => $branchCost,
+                'status' => $this->status,
+                'stock' => $this->is_combo ? 0 : $this->stock,
+            ];
+        }
+
+        DB::transaction(function () use ($data, $branchCost) {
             $product = Product::updateOrCreate(['id' => $this->product_id], $data);
+            $product->branchStocks()->updateOrCreate([], [
+                'stock' => $this->is_combo ? 0 : $this->stock,
+                'price' => $this->price,
+                'cost' => $branchCost,
+                'is_available' => $this->status,
+            ]);
             $product->optionGroups()->delete();
 
             foreach ($this->is_combo ? [] : $this->option_groups as $group) {
@@ -188,7 +229,7 @@ class ProductComponent extends Component
         $this->price       = $this->moneyForInput($product->price);
         $this->cost        = $this->moneyForInput($product->cost);
         $this->tax_rate    = $this->numberForInput($product->tax_rate);
-        $this->stock       = $product->stock;
+        $this->stock       = $product->branchStocks()->value('stock') ?? $product->getRawOriginal('stock') ?? 0;
         $this->status      = $product->status;
         $this->requires_kitchen = $product->requires_kitchen;
         $this->is_combo = $product->is_combo;
@@ -287,6 +328,8 @@ class ProductComponent extends Component
     #[On('delete-confirmed')]
     public function destroy($id)
     {
+        abort_unless(auth()->user()?->can('productos.eliminar'), 403);
+
         Product::findOrFail($id)->delete();
 
         $this->dispatch('swal', [

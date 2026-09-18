@@ -22,7 +22,7 @@ class RestaurantLayoutComponent extends Component
     public function addFloor(): void
     {
         $this->ensureCanConfigureLayout();
-        $this->validate(['floor_name' => ['required', 'string', 'max:50', Rule::unique('restaurant_floors', 'name')]]);
+        $this->validate(['floor_name' => ['required', 'string', 'max:50', Rule::unique('restaurant_floors', 'name')->where('branch_id', session('branch_id'))]]);
 
         $floor = RestaurantFloor::create([
             'name' => trim($this->floor_name),

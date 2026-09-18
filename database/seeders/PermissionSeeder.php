@@ -3,6 +3,8 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
+use App\Models\Company;
+use App\Support\TenantSeedContext;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
 
@@ -10,6 +12,8 @@ class PermissionSeeder extends Seeder
 {
     public function run(): void
     {
+        $companyId = TenantSeedContext::companyId() ?? Company::query()->where('is_active', true)->value('id');
+        setPermissionsTeamId($companyId);
         $rolesPermissions = [
             'admin' => [
                 'categorias.ver',
@@ -82,8 +86,14 @@ class PermissionSeeder extends Seeder
         ];
 
         foreach ($rolesPermissions as $roleName => $permissions) {
-            // Crear rol
-            $role = Role::firstOrCreate(['name' => $roleName]);
+            $role = Role::where('company_id', $companyId)->where('name', $roleName)->first();
+            if (!$role) {
+                $role = new Role();
+                $role->company_id = $companyId;
+                $role->name = $roleName;
+                $role->guard_name = 'web';
+                $role->save();
+            }
 
             foreach ($permissions as $permName) {
                 // Crear permiso si no existe

@@ -14,6 +14,7 @@
             <thead class="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400">
                 <tr>
                     <th class="px-5 py-4">Estación</th>
+                    <th class="px-5 py-4">Impresora</th>
                     <th class="px-5 py-4">Equipo</th>
                     <th class="px-5 py-4 text-right">Acciones</th>
                 </tr>
@@ -22,6 +23,7 @@
                 @forelse ($stations as $station)
                     <tr>
                         <td class="px-5 py-4 font-bold text-slate-700">{{ $station->name }}</td>
+                        <td class="px-5 py-4 text-slate-500">{{ $station->printer_name ?: 'Solo pantalla' }}</td>
                         <td class="px-5 py-4 text-slate-500">{{ $station->users->pluck('name')->join(', ') ?: 'Sin personal asignado' }}</td>
                         <td class="px-5 py-4">
                             <div class="flex justify-end gap-2">
@@ -31,7 +33,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="3" class="px-5 py-12 text-center text-sm text-slate-400">Crea las estaciones antes de asignarlas a productos.</td></tr>
+                    <tr><td colspan="4" class="px-5 py-12 text-center text-sm text-slate-400">Crea las estaciones antes de asignarlas a productos.</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -45,6 +47,11 @@
                 <label class="mt-5 block text-[10px] font-black uppercase tracking-wide text-slate-400">Nombre</label>
                 <input wire:model="name" type="text" placeholder="Ej.: Parrilla" class="mt-1 w-full rounded-xl border-slate-200 px-3 py-2.5 text-sm">
                 @error('name') <p class="mt-1 text-xs font-semibold text-rose-600">{{ $message }}</p> @enderror
+
+                <label class="mt-5 block text-[10px] font-black uppercase tracking-wide text-slate-400">Impresora opcional</label>
+                <input wire:model="printer_name" type="text" placeholder="Ej.: Cocina-80mm" class="mt-1 w-full rounded-xl border-slate-200 px-3 py-2.5 text-sm">
+                <p class="mt-1 text-xs text-slate-400">Déjala vacía para usar solo la pantalla.</p>
+                @error('printer_name') <p class="mt-1 text-xs font-semibold text-rose-600">{{ $message }}</p> @enderror
 
                 <p class="mt-5 text-[10px] font-black uppercase tracking-wide text-slate-400">Personal de preparación</p>
                 <div class="mt-2 max-h-44 space-y-2 overflow-y-auto rounded-xl bg-slate-50 p-3">

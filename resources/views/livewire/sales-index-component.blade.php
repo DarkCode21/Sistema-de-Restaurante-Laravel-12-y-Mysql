@@ -41,6 +41,16 @@
                         </div>
                     </div>
 
+                    <div class="flex-1 min-w-[180px]">
+                        <label class="text-[10px] font-black text-slate-400 uppercase ml-1 mb-1 block">Mesero</label>
+                        <x-searchable-select model="waiter" :options="$waiters" placeholder="Todos los meseros" icon="fa-user" />
+                    </div>
+
+                    <div class="flex-1 min-w-[180px]">
+                        <label class="text-[10px] font-black text-slate-400 uppercase ml-1 mb-1 block">Cliente</label>
+                        <x-searchable-select model="customer" :options="$customers" placeholder="Todos los clientes" icon="fa-user-tag" />
+                    </div>
+
                     @can('ventas.reportes')
                         <div class="flex gap-2 w-full sm:w-auto">
                             <a href="{{ route('sales.report.pdf', ['search' => $search, 'from' => $fromDate, 'to' => $toDate]) }}"
@@ -60,81 +70,21 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2">
-
-            <div
-                class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 p-5 shadow-[0_8px_30px_rgb(6,182,212,0.3)] border border-white/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgb(6,182,212,0.4)]">
-                <div class="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10 blur-xl"></div>
-
-                <div class="flex items-center justify-between relative z-10">
-                    <div class="space-y-1">
-                        <p class="text-[11px] font-bold text-cyan-100 uppercase tracking-widest drop-shadow-sm">Total
-                            Ventas</p>
-                        <h2 class="text-2xl font-black text-white tracking-tight drop-shadow-md">
-                            {{ $empresa->currency_simbol }}{{ number_format($totalSales, 2) }}
-                        </h2>
-                    </div>
-                    <div
-                        class="h-11 w-11 rounded-xl bg-white/15 backdrop-blur-md border border-white/20 text-white flex items-center justify-center text-lg shadow-inner">
-                        <i class="fas fa-cash-register"></i>
-                    </div>
-                </div>
-            </div>
-
-            <div
-                class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-5 shadow-[0_8px_30px_rgb(16,185,129,0.3)] border border-white/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgb(16,185,129,0.4)]">
-                <div class="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10 blur-xl"></div>
-
-                <div class="flex items-center justify-between relative z-10">
-                    <div class="space-y-1">
-                        <p class="text-[11px] font-bold text-emerald-100 uppercase tracking-widest drop-shadow-sm">Total
-                            Propinas</p>
-                        <h2 class="text-2xl font-black text-white tracking-tight drop-shadow-md">
-                            {{ $empresa->currency_simbol }}{{ number_format($totalTips, 2) }}
-                        </h2>
-                    </div>
-                    <div
-                        class="h-11 w-11 rounded-xl bg-white/15 backdrop-blur-md border border-white/20 text-white flex items-center justify-center text-lg shadow-inner">
-                        <i class="fas fa-hand-holding-heart"></i>
-                    </div>
-                </div>
-            </div>
-
-        </div>
-
-        @if ($paymentTotals['cash'] > 0 || $paymentTotals['yape'] > 0 || $paymentTotals['card'] > 0)
-            <div class="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 xl:grid-cols-3">
+        <div class="mb-6 grid gap-4 sm:grid-cols-2 {{ $tipsEnabled ? 'xl:grid-cols-5' : 'xl:grid-cols-4' }}">
+            <section class="relative overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-cyan-500 to-blue-600 p-5 text-white shadow-[0_8px_30px_rgb(6,182,212,0.25)]"><i class="fa-solid fa-cash-register absolute -right-3 -top-4 text-8xl text-white/10"></i><p class="relative text-[10px] font-black uppercase tracking-widest text-cyan-100">Total ventas</p><p class="relative mt-2 text-3xl font-black tracking-tight">{{ $empresa->currency_simbol }}{{ number_format($totalSales, 2) }}</p></section>
+            @if ($tipsEnabled)
+                <section class="relative overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-emerald-500 to-teal-600 p-5 text-white shadow-[0_8px_30px_rgb(16,185,129,0.25)]"><i class="fa-solid fa-hand-holding-heart absolute -right-3 -top-4 text-8xl text-white/10"></i><p class="relative text-[10px] font-black uppercase tracking-widest text-emerald-100">Total propinas</p><p class="relative mt-2 text-3xl font-black tracking-tight">{{ $empresa->currency_simbol }}{{ number_format($totalTips, 2) }}</p></section>
+            @endif
             @if ($paymentTotals['cash'] > 0)
-            <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 p-5 shadow-[0_8px_30px_rgb(245,158,11,0.3)] border border-white/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgb(245,158,11,0.4)]">
-                <div class="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10 blur-xl"></div>
-                <div class="relative z-10 flex items-center justify-between">
-                    <div class="space-y-1"><p class="text-[11px] font-bold uppercase tracking-widest text-amber-100">Efectivo</p><h2 class="text-2xl font-black tracking-tight text-white">{{ $empresa->currency_simbol }}{{ number_format($paymentTotals['cash'], 2) }}</h2></div>
-                    <div class="flex h-11 w-11 items-center justify-center rounded-xl border border-white/20 bg-white/15 text-lg text-white"><i class="fas fa-money-bill-wave"></i></div>
-                </div>
-            </div>
+                <section class="relative overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-orange-500 to-amber-600 p-5 text-white shadow-[0_8px_30px_rgb(249,115,22,0.25)]"><i class="fa-solid fa-money-bill-wave absolute -right-3 -top-4 text-8xl text-white/10"></i><p class="relative text-[10px] font-black uppercase tracking-widest text-orange-100">Efectivo</p><p class="relative mt-2 text-3xl font-black tracking-tight">{{ $empresa->currency_simbol }}{{ number_format($paymentTotals['cash'], 2) }}</p></section>
             @endif
-
             @if ($paymentTotals['yape'] > 0)
-            <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-violet-500 to-purple-700 p-5 shadow-[0_8px_30px_rgb(139,92,246,0.3)] border border-white/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgb(139,92,246,0.4)]">
-                <div class="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10 blur-xl"></div>
-                <div class="relative z-10 flex items-center justify-between">
-                    <div class="space-y-1"><p class="text-[11px] font-bold uppercase tracking-widest text-violet-100">Yape</p><h2 class="text-2xl font-black tracking-tight text-white">{{ $empresa->currency_simbol }}{{ number_format($paymentTotals['yape'], 2) }}</h2></div>
-                    <div class="flex h-11 w-11 items-center justify-center rounded-xl border border-white/20 bg-white/15 text-lg text-white"><i class="fas fa-mobile-screen-button"></i></div>
-                </div>
-            </div>
+                <section class="relative overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-violet-500 to-purple-700 p-5 text-white shadow-[0_8px_30px_rgb(139,92,246,0.25)]"><i class="fa-solid fa-mobile-screen-button absolute -right-3 -top-4 text-8xl text-white/10"></i><p class="relative text-[10px] font-black uppercase tracking-widest text-violet-100">Yape</p><p class="relative mt-2 text-3xl font-black tracking-tight">{{ $empresa->currency_simbol }}{{ number_format($paymentTotals['yape'], 2) }}</p></section>
             @endif
-
             @if ($paymentTotals['card'] > 0)
-            <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-700 p-5 shadow-[0_8px_30px_rgb(99,102,241,0.3)] border border-white/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgb(99,102,241,0.4)]">
-                <div class="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10 blur-xl"></div>
-                <div class="relative z-10 flex items-center justify-between">
-                    <div class="space-y-1"><p class="text-[11px] font-bold uppercase tracking-widest text-indigo-100">Tarjeta</p><h2 class="text-2xl font-black tracking-tight text-white">{{ $empresa->currency_simbol }}{{ number_format($paymentTotals['card'], 2) }}</h2></div>
-                    <div class="flex h-11 w-11 items-center justify-center rounded-xl border border-white/20 bg-white/15 text-lg text-white"><i class="fas fa-credit-card"></i></div>
-                </div>
-            </div>
+                <section class="relative overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-slate-700 to-slate-900 p-5 text-white shadow-[0_8px_30px_rgb(15,23,42,0.2)]"><i class="fa-solid fa-credit-card absolute -right-3 -top-4 text-8xl text-white/10"></i><p class="relative text-[10px] font-black uppercase tracking-widest text-slate-300">Tarjeta</p><p class="relative mt-2 text-3xl font-black tracking-tight">{{ $empresa->currency_simbol }}{{ number_format($paymentTotals['card'], 2) }}</p></section>
             @endif
-            </div>
-        @endif
+        </div>
         <div class="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
 
             {{-- DESKTOP --}}
@@ -143,7 +93,7 @@
                     <thead>
                         <tr class="bg-slate-50/50 border-b border-slate-100">
                             <th class="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Venta / Fecha</th>
-                            <th class="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Atención</th>
+                            <th class="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Tipo de atención</th>
                             <th class="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Mesero</th>
                             <th class="px-6 py-4 text-[10px] font-black text-slate-400 uppercase text-right">Total</th>
                             <th class="px-6 py-4 text-[10px] font-black text-slate-400 uppercase text-center">Acciones
@@ -181,15 +131,15 @@
                                 <td class="px-6 py-4 text-right">
                                     <div class="flex flex-col items-end leading-tight">
                                         <span class="text-sm font-black text-slate-900">
-                                            {{ $empresa->currency_simbol }}{{ number_format($sale->total, 2) }}
+                                            {{ $empresa->currency_simbol }}{{ number_format($tipsEnabled ? $sale->adjusted_total : $sale->total, 2) }}
                                         </span>
 
-                                        @if ($sale->tip > 0)
+                                        @if ($tipsEnabled && $sale->adjusted_tip > 0)
                                             <span
                                                 class="text-[10px] text-emerald-600 font-bold uppercase flex items-center gap-1">
                                                 <i class="fas fa-hand-holding-heart"></i>
                                                 Propina
-                                                {{ $empresa->currency_simbol }}{{ number_format($sale->tip, 2) }}
+                                                {{ $empresa->currency_simbol }}{{ number_format($sale->adjusted_tip, 2) }}
                                             </span>
                                         @endif
                                     </div>
@@ -232,12 +182,12 @@
 
                             <div class="text-right">
                                 <div class="text-lg font-black text-orange-600">
-                                    {{ $empresa->currency_simbol }}{{ number_format($sale->total, 2) }}
+                                    {{ $empresa->currency_simbol }}{{ number_format($tipsEnabled ? $sale->adjusted_total : $sale->total, 2) }}
                                 </div>
 
-                                @if ($sale->tip > 0)
+                                @if ($tipsEnabled && $sale->adjusted_tip > 0)
                                     <div class="text-[10px] text-emerald-600 font-bold uppercase">
-                                        + Propina {{ $empresa->currency_simbol }}{{ number_format($sale->tip, 2) }}
+                                        + Propina {{ $empresa->currency_simbol }}{{ number_format($sale->adjusted_tip, 2) }}
                                     </div>
                                 @endif
                             </div>
@@ -275,7 +225,7 @@
                     <div class="mt-5 overflow-hidden rounded-xl border border-slate-200"><table class="w-full text-left text-xs"><thead class="bg-slate-50 text-[10px] uppercase text-slate-400"><tr><th class="px-4 py-3">Producto</th><th class="px-4 py-3 text-right">Cant.</th><th class="px-4 py-3 text-right">Total</th></tr></thead><tbody class="divide-y divide-slate-100">@foreach ($selectedSale->details as $detail)<tr><td class="px-4 py-3 font-semibold text-slate-700">{{ $detail->product_name ?: $detail->product?->name ?: 'Producto histórico' }}@if ($detail->notes)<p class="mt-1 text-[10px] font-normal text-slate-400">{{ $detail->notes }}</p>@endif</td><td class="px-4 py-3 text-right">{{ $detail->quantity }}</td><td class="px-4 py-3 text-right font-bold">{{ $empresa->currency_simbol }}{{ number_format($detail->subtotal + $detail->tax, 2) }}</td></tr>@endforeach</tbody></table></div>
                     <div class="mt-5 grid gap-4 sm:grid-cols-2">
                         <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs">
-                            <p class="font-bold text-slate-700">Pagos registrados</p>
+                            <div class="flex items-center justify-between gap-3"><p class="font-bold text-slate-700">Pagos registrados</p>@can('ordenes.cobrar')@if ($canEditPayments)<button wire:click="openPaymentEditor({{ $selectedSale->id }})" class="rounded-lg bg-white px-2 py-1 text-[10px] font-black uppercase text-violet-700 shadow-sm ring-1 ring-violet-200 hover:bg-violet-50">Corregir</button>@endif@endcan</div>
                             @foreach ($selectedSale->payments as $payment)
                                 <div class="mt-3 border-t border-slate-200 pt-3 first:mt-2 first:border-t-0 first:pt-0">
                                     <p class="flex justify-between font-semibold text-slate-600"><span>{{ $payment->method?->name ?? 'Método' }}</span><span>{{ $empresa->currency_simbol }}{{ number_format($payment->amount, 2) }}</span></p>
@@ -290,14 +240,48 @@
                         </div>
                         <div class="rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-100 p-4 text-right text-xs shadow-sm">
                             <p class="font-bold uppercase tracking-wider text-orange-700">Total pagado</p>
-                            <p class="mt-1 text-3xl font-black tracking-tight text-slate-800">{{ $empresa->currency_simbol }}{{ number_format($selectedSale->total, 2) }}</p>
+                            <p class="mt-1 text-3xl font-black tracking-tight text-slate-800">{{ $empresa->currency_simbol }}{{ number_format($tipsEnabled ? $selectedSale->adjusted_total : $selectedSale->total, 2) }}</p>
                             <div class="mt-3 border-t border-orange-200 pt-3 text-slate-500">
                                 <p class="flex justify-between"><span>Productos</span><span>{{ $empresa->currency_simbol }}{{ number_format($selectedSale->subtotal + $selectedSale->tax, 2) }}</span></p>
                                 @if ($selectedSale->manual_discount > 0)<p class="mt-1 flex justify-between text-orange-700"><span>Descuento</span><span>-{{ $empresa->currency_simbol }}{{ number_format($selectedSale->manual_discount, 2) }}</span></p>@endif
-                                @if ($selectedSale->tip > 0)<p class="mt-1 flex justify-between text-emerald-700"><span>Propina</span><span>{{ $empresa->currency_simbol }}{{ number_format($selectedSale->tip, 2) }}</span></p>@endif
+                                @if ($tipsEnabled && $selectedSale->adjusted_tip > 0)<p class="mt-1 flex justify-between text-emerald-700"><span>Propina</span><span>{{ $empresa->currency_simbol }}{{ number_format($selectedSale->adjusted_tip, 2) }}</span></p>@endif
                             </div>
                         </div>
                     </div>
+                    @if ($tipsEnabled)
+                        <div class="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs">
+                            <div class="flex items-center justify-between gap-3"><div><p class="font-bold text-emerald-800">Ajustes de propina</p><p class="mt-1 text-emerald-700">La venta original no se modifica.</p></div>@can('empresa.editar')<button wire:click="openTipAdjustment({{ $selectedSale->id }})" class="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase text-white">Ajustar</button>@endcan</div>
+                            @forelse ($selectedSale->tipAdjustments as $adjustment)
+                                <div class="mt-3 border-t border-emerald-200 pt-3"><p class="flex justify-between font-semibold text-emerald-900"><span>{{ $adjustment->amount >= 0 ? '+' : '-' }}{{ $empresa->currency_simbol }}{{ number_format(abs($adjustment->amount), 2) }}</span><span>{{ $adjustment->adjusted_at->format('d/m/Y H:i') }}</span></p><p class="mt-1 text-emerald-700">{{ $adjustment->reason }} · {{ $adjustment->paymentMethod?->name ?? 'Método histórico' }} · {{ $adjustment->adjuster?->name ?? 'Usuario histórico' }}</p></div>
+                            @empty
+                                <p class="mt-3 border-t border-emerald-200 pt-3 text-emerald-700">Sin ajustes posteriores.</p>
+                            @endforelse
+                        </div>
+                    @endif
+                    @if ($showTipAdjustment)
+                        <div class="mt-5 rounded-xl border border-orange-200 bg-orange-50 p-4 text-xs">
+                            <div class="flex items-start justify-between gap-3"><div><p class="font-bold text-orange-800">Ajustar propina</p><p class="mt-1 text-orange-700">Usa un importe positivo para agregar o negativo para devolver.</p></div><button wire:click="closeTipAdjustment" class="text-orange-600"><i class="fa-solid fa-xmark"></i></button></div>
+                            <div class="mt-4 grid gap-3 sm:grid-cols-2"><div><label class="font-semibold text-slate-600">Importe</label><input wire:model="tipAdjustmentAmount" type="number" step="0.01" placeholder="Ej. 5.00 o -5.00" class="mt-1 w-full rounded-lg border-slate-200 text-sm"><x-input-error :messages="$errors->get('tipAdjustmentAmount')" /></div><div><label class="font-semibold text-slate-600">Medio de pago</label><select wire:model="tipAdjustmentPaymentMethodId" class="mt-1 w-full rounded-lg border-slate-200 text-sm"><option value="">Selecciona</option>@foreach ($paymentMethods as $method)<option value="{{ $method->id }}">{{ $method->name }}</option>@endforeach</select><x-input-error :messages="$errors->get('tipAdjustmentPaymentMethodId')" /></div><div class="sm:col-span-2"><label class="font-semibold text-slate-600">Caja abierta</label><select wire:model="tipAdjustmentCashRegisterId" class="mt-1 w-full rounded-lg border-slate-200 text-sm"><option value="">Selecciona</option>@foreach ($cashRegisters as $cashRegister)<option value="{{ $cashRegister->id }}">{{ $cashRegister->name }} · {{ $empresa->currency_simbol }}{{ number_format($cashRegister->current_amount, 2) }}</option>@endforeach</select><x-input-error :messages="$errors->get('tipAdjustmentCashRegisterId')" /></div><div class="sm:col-span-2"><label class="font-semibold text-slate-600">Motivo</label><input wire:model="tipAdjustmentReason" maxlength="255" class="mt-1 w-full rounded-lg border-slate-200 text-sm"><x-input-error :messages="$errors->get('tipAdjustmentReason')" /></div><div class="sm:col-span-2"><label class="font-semibold text-slate-600">Referencia opcional</label><input wire:model="tipAdjustmentReference" maxlength="255" class="mt-1 w-full rounded-lg border-slate-200 text-sm"></div></div>
+                            <button wire:click="saveTipAdjustment" class="mt-4 rounded-lg bg-orange-600 px-4 py-2 text-[10px] font-black uppercase text-white">Registrar ajuste</button>
+                        </div>
+                    @endif
+                    @if ($showPaymentEditor)
+                        <div class="mt-5 rounded-xl border border-violet-200 bg-violet-50 p-4 text-xs">
+                            <div class="flex items-start justify-between gap-3"><div><p class="font-bold text-violet-900">Corregir pagos</p><p class="mt-1 text-violet-700">La suma debe mantenerse igual y el cambio queda auditado.</p></div><button wire:click="closePaymentEditor" class="text-violet-600"><i class="fa-solid fa-xmark"></i></button></div>
+                            <div class="mt-4 space-y-3">
+                                @foreach ($paymentEdits as $index => $payment)
+                                    <div wire:key="payment-edit-{{ $payment['id'] }}" class="grid gap-3 rounded-lg border border-violet-100 bg-white p-3 sm:grid-cols-3">
+                                        <select wire:model="paymentEdits.{{ $index }}.payment_method_id" class="rounded-lg border-slate-200 text-sm"><option value="">Método</option>@foreach ($paymentMethods as $method)<option value="{{ $method->id }}">{{ $method->name }}</option>@endforeach</select>
+                                        <input wire:model="paymentEdits.{{ $index }}.amount" type="number" min="0.01" step="0.01" placeholder="Monto" class="rounded-lg border-slate-200 text-sm">
+                                        <input wire:model="paymentEdits.{{ $index }}.reference" maxlength="255" placeholder="Referencia" class="rounded-lg border-slate-200 text-sm">
+                                    </div>
+                                @endforeach
+                            </div>
+                            <label class="mt-3 block font-semibold text-slate-600">Motivo<input wire:model="paymentEditReason" maxlength="255" placeholder="Ej. método ingresado por error" class="mt-1 w-full rounded-lg border-slate-200 text-sm"></label>
+                            @error('paymentEditReason')<p class="mt-1 text-rose-600">{{ $message }}</p>@enderror
+                            <button wire:click="savePaymentEdits" class="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-[10px] font-black uppercase text-white hover:bg-violet-700">Guardar corrección</button>
+                        </div>
+                    @endif
                     <a href="{{ route('sales.receipt', $selectedSale->id) }}" target="_blank" class="mt-5 inline-flex rounded-lg bg-orange-600 px-4 py-2 text-[10px] font-black uppercase text-white">Imprimir ticket</a>
                 </section>
             </div>

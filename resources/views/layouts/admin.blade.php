@@ -5,6 +5,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="theme-color" content="#ea580c">
+    <link rel="manifest" href="{{ asset('manifest.webmanifest') }}">
     <title>{{ config('app.name', 'Laravel') }}</title>
 
     @if (isset($empresa) && $empresa->favicon_path)
@@ -117,21 +119,12 @@
                 for (const { url, printer_name } of jobs) {
                     @if ($empresa->direct_printing)
                         impresionDirecta(url, printer_name);
-                    @else
-                        const result = await Swal.fire({
-                            title: 'Corrección de comanda',
-                            text: 'Abre e imprime la corrección para cocina.',
-                            icon: 'warning',
-                            showCancelButton: true,
-                            confirmButtonText: 'Abrir corrección',
-                            cancelButtonText: 'Ahora no',
-                        });
-
-                        if (result.isConfirmed) {
-                            abrirVentanaEmergente(url);
-                        }
                     @endif
                 }
+            });
+
+            Livewire.on('print-job', async (jobs) => {
+                await printQueuedJob(jobs[0]);
             });
 
             // Confirmación de eliminación
@@ -210,6 +203,29 @@
                 });
         }
 
+        async function printQueuedJob(job) {
+            try {
+                const response = await fetch("{{ env('IMPRESION_LOCAL_URL') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ venta_url: job.url, printer: job.printer_name })
+                });
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.message || 'El agente local rechazó la impresión.');
+                }
+
+                Livewire.dispatch('confirm-print-job', { jobId: job.id, success: true });
+            } catch (error) {
+                Livewire.dispatch('confirm-print-job', { jobId: job.id, success: false, error: error.message });
+            }
+        }
+
+        window.addEventListener('print-job', (event) => {
+            for (const job of event.detail ?? []) printQueuedJob(job);
+        });
+
         function abrirVentanaEmergente(url) {
             const width = 400;
             const height = 600;
@@ -219,63 +235,6 @@
             window.open(url, '_blank', `width=${width},height=${height},left=${left},top=${top}`);
         }
 
-        function abrirModalImpresion(kitchenUrl = '', barUrl = '') {
-
-            const modal = document.getElementById('printModal');
-
-            @if ($empresa->separate_orders)
-
-                const kitchenFrame = document.getElementById('printFrameKitchen');
-                const barFrame = document.getElementById('printFrameBar');
-
-                if (kitchenFrame) {
-                    kitchenFrame.src = kitchenUrl || '';
-                }
-
-                if (barFrame) {
-                    barFrame.src = barUrl || '';
-                }
-            @else
-
-                const printFrame = document.getElementById('printFrame');
-
-                if (printFrame) {
-                    printFrame.src = kitchenUrl || '';
-                }
-            @endif
-
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
-        }
-
-        function cerrarModalImpresion() {
-
-            const modal = document.getElementById('printModal');
-
-            @if ($empresa->separate_orders)
-
-                const kitchenFrame = document.getElementById('printFrameKitchen');
-                const barFrame = document.getElementById('printFrameBar');
-
-                if (kitchenFrame) {
-                    kitchenFrame.src = '';
-                }
-
-                if (barFrame) {
-                    barFrame.src = '';
-                }
-            @else
-
-                const printFrame = document.getElementById('printFrame');
-
-                if (printFrame) {
-                    printFrame.src = '';
-                }
-            @endif
-
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
-        }
     </script>
 
     @stack('js')

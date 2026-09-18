@@ -40,12 +40,14 @@ class OrdersCashierComponent extends Component
     public $tip = 0;
     public $manual_discount = 0;
     public $manual_discount_reason = '';
+    public bool $tipsEnabled = true;
 
     public function mount()
     {
         $setting = Setting::first();
         $this->printer_name = $setting->printer_name;
         $this->direct_printing = $setting->direct_printing;
+        $this->tipsEnabled = $setting->tips_enabled;
         $this->paymentMethods = PaymentMethod::all();
         $this->boxes = CashRegister::query()
             ->with(['terminal', 'opener'])
@@ -57,12 +59,12 @@ class OrdersCashierComponent extends Component
         $this->knownReadyOrderIds = $this->readyOrders()->pluck('id')->map(fn ($id) => (int) $id)->all();
 
         $orderId = request()->integer('order');
-        if (!$this->quickCheckout || !$orderId) {
+        if (!$orderId) {
             return;
         }
 
         $order = Order::with(['details', 'sale'])->find($orderId);
-        if ($order?->is_ready_for_checkout && !$order->sale) {
+        if ($order && !$order->sale && (!$this->quickCheckout || $order->is_ready_for_checkout)) {
             $this->openFullPayment($order->id);
         }
     }
@@ -124,7 +126,7 @@ class OrdersCashierComponent extends Component
 
     public function getTotalProperty()
     {
-        return (float) $this->subtotal - $this->manualDiscount + (float) $this->tax - $this->manualDiscountTax + (float) $this->tip;
+        return (float) $this->subtotal - $this->manualDiscount + (float) $this->tax - $this->manualDiscountTax + ($this->tipsEnabled ? (float) $this->tip : 0);
     }
 
     public function getManualDiscountProperty(): float
@@ -370,7 +372,8 @@ class OrdersCashierComponent extends Component
             return;
         }
 
-        if (!is_numeric($this->tip) || (float) $this->tip < 0) {
+        $tipsEnabled = (bool) (Setting::first()?->tips_enabled ?? true);
+        if ($tipsEnabled && (!is_numeric($this->tip) || (float) $this->tip < 0)) {
             $this->dispatch('swal', [
                 'title' => 'Error',
                 'text'  => 'La propina debe ser un monto válido.',
@@ -412,7 +415,7 @@ class OrdersCashierComponent extends Component
         $orderId = $this->order->id;
 
         try {
-            $sale = DB::transaction(function () use ($detailIds, $orderId, $paymentRows, $manualDiscount, $manualDiscountReason) {
+            $sale = DB::transaction(function () use ($detailIds, $orderId, $paymentRows, $manualDiscount, $manualDiscountReason, $tipsEnabled) {
                 $order = Order::query()
                     ->with('table')
                     ->whereKey($orderId)
@@ -473,6 +476,10 @@ class OrdersCashierComponent extends Component
                     throw new \RuntimeException('El turno seleccionado no está disponible para este usuario.');
                 }
 
+                if (!$cashRegister->branch_id) {
+                    throw new \RuntimeException('El turno de caja no tiene una sede asignada.');
+                }
+
                 $rawSubtotal = (float) $details->sum('subtotal');
                 $rawTax = (float) $details->sum('tax');
 
@@ -485,7 +492,7 @@ class OrdersCashierComponent extends Component
                     : 0;
                 $subtotal = round($rawSubtotal - $manualDiscount, 2);
                 $tax = round($rawTax - $manualDiscountTax, 2);
-                $tip = (float) $this->tip;
+                $tip = $tipsEnabled ? (float) $this->tip : 0;
                 $total = $subtotal + $tax + $tip;
                 $paid = (float) $paymentRows->sum('amount');
 
@@ -497,10 +504,11 @@ class OrdersCashierComponent extends Component
                 $remainingChange = $change;
                 $cashAmount = 0;
 
-                $sale = Sale::create([
+                $sale = new Sale([
                     'order_id' => $order->id,
                     'customer_name' => $order->customer_name ?: 'Consumidor Final',
                     'cash_register_id' => $cashRegister->id,
+                    'cashier_id' => auth()->id(),
                     'subtotal' => $subtotal,
                     'tax' => $tax,
                     'manual_discount' => $manualDiscount,
@@ -512,6 +520,8 @@ class OrdersCashierComponent extends Component
                     'change' => $change,
                     'paid_at' => now(),
                 ]);
+                $sale->branch_id = $cashRegister->branch_id;
+                $sale->save();
 
                 foreach ($details as $detail) {
                     $costTotal = $this->detailCost($detail);
@@ -581,7 +591,6 @@ class OrdersCashierComponent extends Component
                             'status' => 'cerrado',
                             'amount_pending' => 0,
                         ]);
-                        $order->table?->update(['status' => 'libre']);
                     } else {
                         $order->update([
                             'amount_pending' => $remainingDetails->sum('subtotal') + $remainingDetails->sum('tax'),

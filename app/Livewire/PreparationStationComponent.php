@@ -15,17 +15,15 @@ class PreparationStationComponent extends Component
 
     public ?int $station_id = null;
     public string $name = '';
+    public string $printer_name = '';
     public array $user_ids = [];
     public bool $isOpen = false;
 
     public function render()
     {
         return view('livewire.preparation-station-component', [
-            'stations' => PreparationStation::with('users')->orderBy('name')->paginate(10),
-            'cooks' => User::query()
-                ->where(fn ($query) => $query->whereNull('type')->orWhere('type', '!=', 'client'))
-                ->orderBy('name')
-                ->get(),
+            'stations' => PreparationStation::with(['users' => fn ($users) => $this->scopeBranchUsers($users)])->orderBy('name')->paginate(10),
+            'cooks' => $this->branchUsers()->orderBy('name')->get(),
         ]);
     }
 
@@ -37,9 +35,10 @@ class PreparationStationComponent extends Component
 
     public function edit(int $stationId): void
     {
-        $station = PreparationStation::with('users')->findOrFail($stationId);
+        $station = PreparationStation::with(['users' => fn ($users) => $this->scopeBranchUsers($users)])->findOrFail($stationId);
         $this->station_id = $station->id;
         $this->name = $station->name;
+        $this->printer_name = $station->printer_name ?? '';
         $this->user_ids = $station->users->pluck('id')->all();
         $this->isOpen = true;
     }
@@ -47,14 +46,20 @@ class PreparationStationComponent extends Component
     public function store(): void
     {
         $this->validate([
-            'name' => ['required', 'string', 'max:100', Rule::unique('preparation_stations')->ignore($this->station_id)],
+            'name' => ['required', 'string', 'max:100', Rule::unique('preparation_stations')->where('branch_id', session('branch_id'))->ignore($this->station_id)],
+            'printer_name' => ['nullable', 'string', 'max:255'],
             'user_ids' => 'array',
             'user_ids.*' => 'exists:users,id',
         ]);
 
+        if ($this->branchUsers()->whereKey($this->user_ids)->count() !== count(array_unique($this->user_ids))) {
+            $this->addError('user_ids', 'Solo puedes asignar personal de la sede activa.');
+            return;
+        }
+
         $station = PreparationStation::updateOrCreate(
             ['id' => $this->station_id],
-            ['name' => trim($this->name)],
+            ['name' => trim($this->name), 'printer_name' => trim($this->printer_name) ?: null],
         );
         $station->users()->sync($this->user_ids);
 
@@ -91,7 +96,19 @@ class PreparationStationComponent extends Component
 
     private function resetForm(): void
     {
-        $this->reset(['station_id', 'name', 'user_ids']);
+        $this->reset(['station_id', 'name', 'printer_name', 'user_ids']);
         $this->resetValidation();
+    }
+
+    private function branchUsers()
+    {
+        return $this->scopeBranchUsers(User::query());
+    }
+
+    private function scopeBranchUsers($users)
+    {
+        return $users
+            ->whereHas('branches', fn ($branches) => $branches->whereKey(session('branch_id')))
+            ->where(fn ($query) => $query->whereNull('type')->orWhere('type', '!=', 'client'));
     }
 }

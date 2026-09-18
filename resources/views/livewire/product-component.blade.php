@@ -5,7 +5,7 @@
         <div class="flex flex-col md:flex-row gap-4 items-center justify-between mb-2">
             <div>
                 <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">Productos</h1>
-                <p class="text-slate-500 text-xs font-medium">Gestiona el inventario y catálogo de productos</p>
+                <p class="text-slate-500 text-xs font-medium">Gestiona el catálogo y los valores de esta sede</p>
             </div>
 
             <div class="flex w-full md:w-auto gap-3">
@@ -36,6 +36,24 @@
                         Control de Existencias
                     </p>
                 </div>
+            </div>
+
+            <div class="grid gap-3 border-b border-slate-100 bg-slate-50/70 px-6 py-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                <div class="xl:col-span-2"><x-searchable-select model="categoryFilter" :options="$categories->pluck('name')" placeholder="Categoría" icon="fa-tags" /></div>
+                <input wire:model.live.debounce.200ms="priceMin" type="number" min="0" step="0.01" placeholder="Precio mín."
+                    class="w-full rounded-xl border-slate-200 bg-white py-2 text-sm focus:border-orange-500 focus:ring-orange-500/20">
+                <input wire:model.live.debounce.200ms="priceMax" type="number" min="0" step="0.01" placeholder="Precio máx."
+                    class="w-full rounded-xl border-slate-200 bg-white py-2 text-sm focus:border-orange-500 focus:ring-orange-500/20">
+                <input wire:model.live.debounce.200ms="stockMin" type="number" min="0" step="1" placeholder="Stock mín."
+                    class="w-full rounded-xl border-slate-200 bg-white py-2 text-sm focus:border-orange-500 focus:ring-orange-500/20">
+                <input wire:model.live.debounce.200ms="stockMax" type="number" min="0" step="1" placeholder="Stock máx."
+                    class="w-full rounded-xl border-slate-200 bg-white py-2 text-sm focus:border-orange-500 focus:ring-orange-500/20">
+                <select wire:model.live="availability" class="w-full rounded-xl border-slate-200 bg-white py-2 text-sm focus:border-orange-500 focus:ring-orange-500/20">
+                    <option value="">Todos los estados</option>
+                    <option value="available">En carta</option>
+                    <option value="unavailable">Agotados</option>
+                </select>
+                <button wire:click="clearFilters" type="button" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500 hover:border-orange-200 hover:text-orange-600">Limpiar</button>
             </div>
 
             <div class="overflow-x-auto">
@@ -235,8 +253,8 @@
                         @endif
 
                         <div>
-                            <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Precio de
-                                Venta</label>
+                                <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Precio de
+                                    Venta de esta sede</label>
                             <div class="relative">
                                 <span class="absolute left-4 top-4 text-slate-400 text-sm">S/</span>
                                 <input wire:model="price" type="number" step="0.01" placeholder="0.00"
@@ -249,7 +267,7 @@
 
                         @if (!$is_combo)
                             <div>
-                                <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Costo unitario</label>
+                                <label class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Costo unitario de esta sede</label>
                                 <div class="relative">
                                     <span class="absolute left-4 top-4 text-slate-400 text-sm">S/</span>
                                     <input wire:model="cost" type="number" min="0" step="0.01" placeholder="Solo sin receta"
@@ -263,7 +281,7 @@
                         @if (!$is_combo)
                         <div>
                             <label
-                                class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Disponibilidad</label>
+                                class="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Disponibilidad en esta sede</label>
                             <select wire:model="status"
                                 class="w-full border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all mt-1">
                                 <option value="1">Hay en carta</option>

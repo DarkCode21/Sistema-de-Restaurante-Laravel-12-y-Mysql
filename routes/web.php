@@ -1,10 +1,13 @@
 <?php
 
 use App\Http\Controllers\CashRegisterController;
+use App\Http\Controllers\AuditController;
+use App\Http\Controllers\BranchContextController;
 use App\Http\Controllers\CrudController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\OfflineOrderController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReportController;
@@ -23,8 +26,13 @@ Route::get('/printer/{id}', [OrderController::class, 'print'])
 Route::get('/printer-local/{id}', [SaleController::class, 'receipt'])
     ->name('sales.print-local')
     ->middleware('signed');
+Route::get('/comprobantes/{sale}/consulta', [SaleController::class, 'verify'])
+    ->name('sales.verify')
+    ->middleware('signed');
 
 Route::middleware('auth')->group(function () {
+
+    Route::put('/current-branch/{branch}', [BranchContextController::class, 'update'])->name('branches.current');
 
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard')
@@ -35,6 +43,8 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/settings', [SettingController::class, 'index'])->name('settings.index')->middleware('can:empresa.editar');
     Route::put('/settings', [SettingController::class, 'update'])->name('settings.update')->middleware('can:empresa.editar');
+    Route::view('/tenants', 'tenants.index')->name('tenants.index')->middleware('can:empresa.editar');
+    Route::view('/print-jobs', 'print-jobs.index')->name('print-jobs.index')->middleware('can:empresa.editar');
 
     Route::get('/payment-methods', [CrudController::class, 'paymentMethod'])->name('payment-methods.index')->middleware('can:payment_methods.ver');
     Route::get('/categories', [CrudController::class, 'category'])->name('categories.index')->middleware('can:categorias.ver');
@@ -57,6 +67,8 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index')->middleware('can:ordenes.ver');
 
+    Route::post('/offline-orders', [OfflineOrderController::class, 'store'])->name('orders.offline')->middleware('can:ordenes.crear');
+
     Route::get('/orders/chef', [OrderController::class, 'chef'])->name('orders.chef');
     Route::get('/orders/cashier', [OrderController::class, 'cashier'])->name('orders.cashier')->middleware('can:ordenes.cobrar');
 
@@ -66,6 +78,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/orders/ticket/{id}', [OrderController::class, 'ticket'])->name('orders.ticket')->middleware('can:ordenes.ver');
 
     Route::get('/sales', [SaleController::class, 'index'])->name('sales.index')->middleware('can:ventas.ver');
+    Route::get('/audits', [AuditController::class, 'index'])->name('audits.index')->middleware('can:ventas.ver');
     Route::get('/sales/{id}/receipt', [SaleController::class, 'receipt'])->name('sales.receipt')->middleware('can:ventas.ver');
 
     Route::get('/reports/sales/pdf', [SaleController::class, 'salesPdf'])->name('sales.report.pdf')->middleware('can:ventas.reportes');
@@ -73,6 +86,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/reports/promotions', [ReportController::class, 'promotions'])->name('reports.promotions')->middleware('can:ventas.reportes');
     Route::get('/reports/profit', [ReportController::class, 'profit'])->name('reports.profit')->middleware('can:ventas.reportes');
+    Route::view('/reports/tips', 'tips.index')->name('reports.tips')->middleware('can:ventas.reportes');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

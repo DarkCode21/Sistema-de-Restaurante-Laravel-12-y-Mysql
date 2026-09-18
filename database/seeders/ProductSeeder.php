@@ -8,6 +8,6 @@ class ProductSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->call(ParrilladaMenuSeeder::class);
+        $this->call(GrillDemoSeeder::class);
     }
 }

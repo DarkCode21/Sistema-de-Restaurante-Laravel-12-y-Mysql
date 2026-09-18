@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Table extends Model
 {
+    use \App\Models\Concerns\HasActiveBranch;
     protected $fillable = [
         'restaurant_floor_id',
         'dining_area_id',
@@ -45,5 +46,10 @@ class Table extends Model
     public function orders()
     {
         return $this->hasMany(Order::class);
+    }
+
+    public function joinedOrders()
+    {
+        return $this->belongsToMany(Order::class, 'order_table')->withTimestamps();
     }
 }

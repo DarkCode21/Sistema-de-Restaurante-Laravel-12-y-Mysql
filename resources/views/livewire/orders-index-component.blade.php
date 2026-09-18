@@ -179,17 +179,31 @@
                                 <a href="{{ route('orders.cashier', ['order' => $order->id, 'quick_checkout' => 1]) }}"
                                     class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
                                     <i class="fa-solid fa-cash-register text-[11px]"></i>
-                                    {{ $order->order_type === 'dine_in' ? 'Cobrar y liberar mesa' : 'Cobrar pedido' }}
+                                    {{ $order->order_type === 'dine_in' ? 'Cobrar mesa' : 'Cobrar pedido' }}
+                                </a>
+                            @elseif (!$order->sale)
+                                <a href="{{ route('orders.cashier', ['order' => $order->id]) }}"
+                                    class="w-full bg-orange-600 hover:bg-orange-700 text-white font-black text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
+                                    <i class="fa-solid fa-cash-register text-[11px]"></i>
+                                    Cobrar adelantado
                                 </a>
                             @endif
                         @endcan
 
                         @can('ordenes.crear')
-                            <a href="{{ route('orders.manage', $order) }}"
-                                class="w-full bg-slate-900 hover:bg-orange-600 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
-                                <i class="fa-solid fa-pen-to-square text-[11px]"></i>
-                                Ver / editar pedido
-                            </a>
+                            @if (!$order->sale)
+                                <a href="{{ route('orders.manage', $order) }}"
+                                    class="w-full bg-slate-900 hover:bg-orange-600 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
+                                    <i class="fa-solid fa-pen-to-square text-[11px]"></i>
+                                    Ver / editar pedido
+                                </a>
+                            @elseif ($order->order_type === 'dine_in')
+                                <a href="{{ route('orders.create', encrypt($order->table_id)) }}"
+                                    class="w-full bg-slate-900 hover:bg-orange-600 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm">
+                                    <i class="fa-solid fa-plus text-[11px]"></i>
+                                    Agregar consumo
+                                </a>
+                            @endif
                         @endcan
                     </div>
                 </div>

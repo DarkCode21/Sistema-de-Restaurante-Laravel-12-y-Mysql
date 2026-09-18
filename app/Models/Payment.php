@@ -24,4 +24,9 @@ class Payment extends Model
     {
         return $this->belongsTo(PaymentMethod::class, 'payment_method_id');
     }
+
+    public function edits()
+    {
+        return $this->hasMany(PaymentEdit::class);
+    }
 }

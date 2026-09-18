@@ -30,6 +30,21 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
 
         $user = auth()->user();
+        $branch = $user->branches()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->first(['branches.id', 'branches.company_id']);
+
+        if ($branch) {
+            $request->session()->put([
+                'branch_id' => $branch->id,
+                'company_id' => $branch->company_id,
+            ]);
+            setPermissionsTeamId($branch->company_id);
+            $user->unsetRelation('roles')->unsetRelation('permissions');
+        } else {
+            $request->session()->forget(['branch_id', 'company_id']);
+        }
 
         if ($user->hasRole('admin')) {
             return redirect()->route('dashboard');

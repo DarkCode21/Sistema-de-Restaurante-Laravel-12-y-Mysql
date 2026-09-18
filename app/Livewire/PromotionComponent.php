@@ -41,7 +41,7 @@ class PromotionComponent extends Component
 
         return view('livewire.promotion-component', [
             'promotions' => $promotions,
-            'products' => Product::where('status', true)->orderBy('name')->get(['id', 'name', 'price']),
+            'products' => Product::availableInActiveBranch()->with('branchStocks')->orderBy('name')->get(['id', 'name', 'price']),
             'discountTypes' => Promotion::DISCOUNT_TYPES,
         ]);
     }
@@ -76,6 +76,8 @@ class PromotionComponent extends Component
 
     public function store(): void
     {
+        abort_unless(auth()->user()?->can($this->promotion_id ? 'productos.editar' : 'productos.crear'), 403);
+
         $this->validate([
             'product_id' => 'required|exists:products,id',
             'name' => 'required|string|max:100',
@@ -113,6 +115,8 @@ class PromotionComponent extends Component
     #[On('delete-confirmed')]
     public function destroy(int $id): void
     {
+        abort_unless(auth()->user()?->can('productos.eliminar'), 403);
+
         Promotion::findOrFail($id)->delete();
     }
 

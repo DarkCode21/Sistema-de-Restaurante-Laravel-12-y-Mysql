@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\Setting;
+use App\Models\Company;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
@@ -22,6 +23,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (config('permission.teams') && Schema::hasTable('companies')) {
+            setPermissionsTeamId(Company::query()->where('is_active', true)->value('id'));
+        }
+
         if (Schema::hasTable('settings')) {
             $settings = Setting::first();
 

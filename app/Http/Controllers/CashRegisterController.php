@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CashRegister;
+use App\Models\TipAdjustment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -17,10 +18,12 @@ class CashRegisterController extends Controller
     public function movements($id, Request $request)
     {
         $realId = Crypt::decrypt($id);
-        $caja = CashRegister::with(['terminal', 'opener', 'sales.payments.method', 'expenses.paymentMethod', 'paymentClosures'])->findOrFail($realId);
+        $caja = CashRegister::with(['terminal', 'opener', 'sales.payments.method', 'expenses.paymentMethod', 'tipPayouts.paymentMethod', 'tipPayouts.waiter', 'tipAdjustments.paymentMethod', 'tipAdjustments.sale', 'paymentClosures'])->findOrFail($realId);
 
         $cashSales = $caja->sales;
         $gastos = $caja->expenses->filter(fn ($expense) => $expense->paymentMethod?->is_efectivo);
+        $tipPayouts = $caja->tipPayouts->filter(fn ($payout) => $payout->paymentMethod?->is_efectivo);
+        $tipAdjustments = $caja->tipAdjustments;
 
         $pagosPorMetodo = $cashSales->flatMap->payments
             ->groupBy(fn($p) => $p->method->name)
@@ -35,6 +38,11 @@ class CashRegisterController extends Controller
             }
         }
 
+        foreach ($tipAdjustments as $adjustment) {
+            $methodName = $adjustment->paymentMethod?->name ?? 'Método histórico';
+            $pagosPorMetodo[$methodName] = ($pagosPorMetodo[$methodName] ?? 0) + (float) $adjustment->amount;
+        }
+
         $settlementRows = $this->paymentSettlementRows($caja);
 
         if ($request->action == 'pdf') {
@@ -43,7 +51,7 @@ class CashRegisterController extends Controller
             return $pdf->stream("Movimientos_Caja_{$caja->id}.pdf");
         }
 
-        return view('cashRegister.movements', compact('caja', 'cashSales', 'pagosPorMetodo', 'settlementRows', 'gastos', 'id'));
+        return view('cashRegister.movements', compact('caja', 'cashSales', 'pagosPorMetodo', 'settlementRows', 'gastos', 'tipPayouts', 'tipAdjustments', 'id'));
     }
 
     public function close($id, Request $request)
@@ -53,12 +61,12 @@ class CashRegisterController extends Controller
             'closing_notes' => ['nullable', 'string', 'max:1000'],
             'payment_closures' => ['nullable', 'array'],
             'payment_closures.*.payment_method_id' => ['required', 'integer', 'distinct', 'exists:payment_methods,id'],
-            'payment_closures.*.counted_amount' => ['required', 'numeric', 'min:0'],
+            'payment_closures.*.counted_amount' => ['required', 'numeric'],
         ]);
 
         $caja = DB::transaction(function () use ($id, $request) {
             $caja = CashRegister::query()
-                ->with(['sales.payments.method', 'paymentClosures'])
+                ->with(['sales.payments.method', 'tipAdjustments.paymentMethod', 'paymentClosures'])
                 ->whereKey($id)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -112,15 +120,21 @@ class CashRegisterController extends Controller
         $closures = $caja->paymentClosures->keyBy(fn ($closure) => $closure->payment_method_id ?? 'cash');
         $digitalRows = $caja->sales
             ->flatMap->payments
-            ->filter(fn ($payment) => !$payment->method?->is_efectivo)
+            ->concat($caja->tipAdjustments)
+            ->filter(fn ($movement) => $movement instanceof TipAdjustment
+                ? !$movement->paymentMethod?->is_efectivo
+                : !$movement->method?->is_efectivo)
             ->groupBy('payment_method_id')
             ->map(function ($payments, $methodId) use ($closures) {
                 $closure = $closures->get($methodId);
                 $expectedAmount = round((float) $payments->sum('amount'), 2);
+                $method = $payments->first() instanceof TipAdjustment
+                    ? $payments->first()->paymentMethod
+                    : $payments->first()->method;
 
                 return [
                     'payment_method_id' => (int) $methodId,
-                    'label' => $payments->first()->method->name,
+                    'label' => $method->name,
                     'is_cash' => false,
                     'expected_amount' => $expectedAmount,
                     'counted_amount' => $closure?->counted_amount,

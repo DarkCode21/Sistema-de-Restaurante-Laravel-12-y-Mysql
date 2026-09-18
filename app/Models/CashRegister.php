@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class CashRegister extends Model
 {
     use SoftDeletes;
+    use \App\Models\Concerns\HasActiveBranch;
 
     protected $casts = [
         'opened_at' => 'datetime',
@@ -60,5 +61,15 @@ class CashRegister extends Model
     public function paymentClosures(): HasMany
     {
         return $this->hasMany(CashRegisterPaymentClosure::class);
+    }
+
+    public function tipPayouts(): HasMany
+    {
+        return $this->hasMany(TipPayout::class);
+    }
+
+    public function tipAdjustments(): HasMany
+    {
+        return $this->hasMany(TipAdjustment::class);
     }
 }

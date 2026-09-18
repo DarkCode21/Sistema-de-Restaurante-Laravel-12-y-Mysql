@@ -75,7 +75,7 @@
                             <h3 class="text-slate-800 font-bold text-xs uppercase">Cronología</h3>
                             <span
                                 class="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-md italic">
-                                {{ $cashSales->count() + $gastos->count() }} ops
+                                {{ $cashSales->count() + $gastos->count() + $tipPayouts->count() + $tipAdjustments->count() }} ops
                             </span>
                         </div>
                         <div class="overflow-x-auto">
@@ -109,6 +109,24 @@
                                                     'concept' => $gasto->concept . ($gasto->description ? ' - ' . $gasto->description : ''),
                                                     'methods' => $gasto->paymentMethod->name ?? 'N/A',
                                                     'amount' => $gasto->amount
+                                                ];
+                                            }))
+                                            ->merge($tipPayouts->map(function($payout) {
+                                                return [
+                                                    'date' => $payout->paid_at,
+                                                    'type' => 'egreso',
+                                                    'concept' => 'Desembolso de propina - ' . $payout->waiter_name,
+                                                    'methods' => $payout->paymentMethod?->name ?? 'Efectivo',
+                                                    'amount' => $payout->amount
+                                                ];
+                                            }))
+                                            ->merge($tipAdjustments->map(function($adjustment) {
+                                                return [
+                                                    'date' => $adjustment->adjusted_at,
+                                                    'type' => $adjustment->amount >= 0 ? 'ingreso' : 'egreso',
+                                                    'concept' => 'Ajuste de propina · Venta #' . $adjustment->sale_id . ' - ' . $adjustment->reason,
+                                                    'methods' => $adjustment->paymentMethod?->name ?? 'Método histórico',
+                                                    'amount' => abs($adjustment->amount)
                                                 ];
                                             }))
                                             ->sortByDesc('date');
@@ -162,6 +180,10 @@
                             <div class="flex justify-between items-center text-sm italic text-rose-600">
                                 <span>Total Egresos (Gastos)</span>
                                 <span class="font-semibold">-{{ $empresa->currency_simbol }}{{ number_format($gastos->sum('amount'), 2) }}</span>
+                            </div>
+                            <div class="flex justify-between items-center text-sm italic text-violet-600">
+                                <span>Propinas entregadas</span>
+                                <span class="font-semibold">-{{ $empresa->currency_simbol }}{{ number_format($tipPayouts->sum('amount'), 2) }}</span>
                             </div>
 
                             @if ($caja->status === 'closed' && $caja->closing_amount !== null)
@@ -262,7 +284,7 @@
             }
 
             const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' })[character]);
-            const inputs = digitalRows.map((row) => `<label class="mb-3 block text-left text-xs font-bold text-slate-600">${escapeHtml(row.label)}<input id="payment-method-${row.payment_method_id}" class="swal2-input !mx-0 !mt-1 !w-full" type="number" min="0" step="0.01" value="${row.expected_amount}"></label>`).join('');
+            const inputs = digitalRows.map((row) => `<label class="mb-3 block text-left text-xs font-bold text-slate-600">${escapeHtml(row.label)}<input id="payment-method-${row.payment_method_id}" class="swal2-input !mx-0 !mt-1 !w-full" type="number" step="0.01" value="${row.expected_amount}"></label>`).join('');
 
             Swal.fire({
                 title: 'Confirma pagos digitales',
